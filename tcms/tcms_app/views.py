@@ -1077,6 +1077,7 @@ class RecentTestEngineerActivities(ListAPIView):
 # TE upcoming events
 
 class TestEngineerUpcomingDueView(ListAPIView):
+    
 
     serializer_class = AssignedTestCaseSerializer
     permission_classes = [IsAuthenticated]
