@@ -1,8 +1,9 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
-import random
+from django.utils import timezone
 from django.db.models import Count
+from datetime import date
 
 # Create your models here.
 
@@ -266,8 +267,6 @@ class TestCase(models.Model):
     module = models.ForeignKey("Module", on_delete=models.CASCADE, related_name="test_cases")
     test_title = models.CharField(max_length=255)
     test_description = models.TextField()
-    steps = models.TextField()
-    expected_result = models.TextField()
     priority = models.CharField(max_length=10, choices=TestCasePriority.choices, default=TestCasePriority.MEDIUM)
     status = models.CharField(max_length=20, choices=TestCaseStatus.choices, default=TestCaseStatus.ASSIGNED)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="created_test_cases")
@@ -275,12 +274,66 @@ class TestCase(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     precondition = models.TextField(null=True, blank=True)  
-    postcondition = models.TextField(null=True, blank=True) 
+    postcondition = models.TextField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
 
 
     def __str__(self):
         return f"{self.test_title} ({self.module.module_name})"
     
+
+    def get_progress(self):
+
+        assigned_users = self.assigned_users.all()  # Related to UserTestCase
+        total_users = assigned_users.count()
+        if total_users == 0:
+            return 0    
+        
+        completed_users = assigned_users.filter(status=UserTestCaseStatus.COMPLETED).count()
+        progress = int((completed_users / total_users) * 100)
+        if completed_users == total_users and total_users > 0:
+            self.status = TestCaseStatus.COMPLETED
+            self.save()
+
+        return progress
+
+
+    def get_due_date(self):
+        if not self.due_date:
+            return "No due date set"
+        today = timezone.now().date()
+        days_left = (self.due_date - today).days
+
+        if days_left > 1:
+            return f"{days_left} days left"
+        elif days_left == 1:
+            return "1 day left"
+        elif days_left == 0:
+            return "Due today"
+        else:
+            return f"Overdue by {-days_left} days"
+
+
+# Test step
+class TestStep(models.Model):
+    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name="test_steps")
+    step_number = models.PositiveIntegerField()
+    step_description = models.TextField()
+    expected_result = models.TextField()
+    status = models.CharField(
+        max_length= 10,
+        choices=[("pass", "Pass"), ("fail", "Fail"), ("not_run", "Not Run")],
+        default="not_run"
+    )
+
+    class Meta:
+        ordering = ["step_number"]
+        unique_together = ("test_case", "step_number")
+        
+
+    def __str__(self):
+        return f"s{self.step_number} for {self.test_case.test_title}"
+
 
 # user test case  
     
@@ -306,6 +359,7 @@ class TaskComment(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="task_comments")
+
 
 #test comment
 

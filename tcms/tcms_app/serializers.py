@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Role, Project, ProjectTeam, Module, Task, Bug, Notification, TestType, TestCase, UserTestCase
+from .models import User, Role, Project, ProjectTeam, Module, Task, Bug, Notification, TestType, TestCase, UserTestCase, TaskComment, TestComment, TestStep
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
@@ -209,17 +209,22 @@ class TaskSerializer(serializers.ModelSerializer):
     project_name = serializers.SerializerMethodField()  # Get project name
     module_name = serializers.SerializerMethodField()  # Get module name
     due_status = serializers.SerializerMethodField()
+    comments = serializers.SerializerMethodField()
 
 
     class Meta:
         model = Task
-        fields = ["id", "task_id", "task_name", "task_description", "assigned_to", "created_by", "priority","status", "created_at","updated_at","due_date", "assigned_to_name", "project_name", "module_name", "progress", "due_status" ]
+        fields = ["id", "task_id", "task_name", "task_description", "assigned_to", "created_by", "priority","status", "created_at","updated_at","due_date", "assigned_to_name", "project_name", "module_name", "progress", "due_status" , "comments"]
 
 
     def get_assigned_to_name(self, obj):
         if obj.assigned_to and obj.assigned_to.user:  # Access user inside ProjectTeam
             return obj.assigned_to.user.get_full_name()
         return None
+    
+    def get_comments(self, obj):
+        comments = obj.task_comments.all().order_by("-created_at")
+        return TaskCommentSerializer(comments, many = True).data if comments else []
     
     
     def get_created_by(self, obj):
@@ -262,20 +267,43 @@ class TaskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Task due date cannot exceed module deadline!")
 
         return value
+    
+
+    
+#Task comment serializer
+
+class TaskCommentSerializer(serializers.ModelSerializer):
+
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskComment
+        fields = ["id", "user_name", "content", "created_at"]
+
+    def get_user_name(self, obj):
+        return obj.user.get_full_name() if obj.user else "Unknown User"
+
 
 
     
-# list developer list    
+# list developer list 
+   
 class DeveloperSerializer(serializers.ModelSerializer):
-    full_name = serializers.SerializerMethodField()
 
+    full_name = serializers.SerializerMethodField()
+    project_team_id = serializers.IntegerField(source="id")  # Get the ProjectTeam ID
+    id = serializers.IntegerField(source="user.id")
+    username = serializers.CharField(source="user.username")
+    email = serializers.EmailField(source="user.email")
+    specialization = serializers.CharField(source="user.specialization", allow_null=True)
 
     class Meta:
-        model = User
-        fields = ["id", "username", "email", "specialization", "profile_picture", "full_name"]
+        model = ProjectTeam  # Use ProjectTeam instead of User
+        fields = ["project_team_id", "id", "username", "email", "specialization", "full_name"]
 
-    def get_full_name(self, obj): 
-        return f"{obj.first_name} {obj.last_name}".strip() if obj.first_name and obj.last_name else obj.username
+    def get_full_name(self, obj):
+        user = obj.user
+        return f"{user.first_name} {user.last_name}".strip() if user.first_name and user.last_name else user.username
 
 
 # Notification
@@ -285,6 +313,15 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Notification
         fields = ["id", "user", "message", "status", "created_at"]
+
+
+# test step serializer
+class TestStepSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TestStep
+        fields = ["id", "step_number","step_description", "expected_result","status"]
+
+
 
 
 
@@ -298,22 +335,142 @@ class TestTypeSerializer(serializers.ModelSerializer):
 
         
 
-# test case serializer
-
 class TestCaseSerializer(serializers.ModelSerializer):
+    test_type_name = serializers.CharField(source="test_type.name", read_only=True)
+    assigned_users = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
+    progress = serializers.SerializerMethodField()
+    due_status = serializers.SerializerMethodField()
+    test_comments = serializers.SerializerMethodField()
+    test_steps = TestStepSerializer(many = True, read_only = True)
 
     class Meta:
         model = TestCase
-        fields = ["id", "test_id", "test_title", "test_description", "steps", "expected_result", "priority", "status", "test_type", "created_at", "updated_at", "precondition", "postcondition"]
-        extra_kwargs = {"created_by" : {"read_only" : True}}
+        fields = [
+            "id", "test_id", "test_title", "test_description",
+            "priority", "status", "test_type", "created_at", "updated_at",
+            "precondition", "postcondition", "test_type_name", "assigned_users", "created_by", "progress", "due_date", "due_status", "test_comments", "test_steps"
+        ]
+        extra_kwargs = {"created_by": {"read_only": True}}
 
+    def get_assigned_users(self, obj):
+
+        #Retrieve all users assigned to the test case.
+
+        user_test_cases = UserTestCase.objects.filter(test_case=obj)
+        return [
+            {
+                "user_id": utc.assigned_to.user.id,
+                "username": utc.assigned_to.user.get_full_name(),
+                "email": utc.assigned_to.user.email,
+                "status": utc.status
+            }
+            for utc in user_test_cases
+        ]
+
+    def get_created_by(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip()
+        return None
     
+
+    def get_progress(self, obj):
+        return obj.get_progress()
+    
+    def get_due_status(self, obj):
+        return obj.get_due_date()
+    
+    def get_test_comments(self, obj):
+        comments = obj.test_comments.all().order_by("-created_at")
+        return TestCommentSerializer(comments, many = True).data
 
 
 # test engineers list
 
 class TestEngineersSerializer(serializers.ModelSerializer):
 
+    full_name = serializers.SerializerMethodField()
+    project_team_id = serializers.IntegerField(source="id")  # Get the ProjectTeam ID
+    user_id = serializers.IntegerField(source="user.id")
+    username = serializers.CharField(source="user.username")
+    email = serializers.EmailField(source="user.email")
+    specialization = serializers.CharField(source="user.specialization", allow_null=True)
+
+
     class Meta:
-        model = User
-        fields = ["id", "username", "email", "profile_picture"]
+        model = ProjectTeam  
+        fields = ["project_team_id", "user_id", "username", "email", "specialization", "full_name"]
+
+    
+    
+    def get_full_name(self, obj):
+        user = obj.user
+        return f"{user.first_name} {user.last_name}".strip() if user.first_name and user.last_name else user.username
+    
+
+
+
+class AssignedTestCaseSerializer(serializers.ModelSerializer):
+    test_case = TestCaseSerializer(read_only=True)  # Use the full TestCaseSerializer
+    progress = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserTestCase
+        fields = ["id", "test_case", "progress"]
+
+
+    def get_progress(self, obj):
+        return obj.test_case.get_progress()
+    
+
+
+
+
+# test comment serializer
+class TestCommentSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source = "user.get_full_name", read_only = True)
+
+    class Meta:
+        model = TestComment
+        fields = ["id", "user_name", "content", "created_at"]
+
+
+
+# TE recent test
+
+class UserTestCaseSerializer(serializers.ModelSerializer):
+    test_case_id = serializers.IntegerField(source = "test_case.id")
+    test_case_test_id = serializers.CharField(source = "test_case.test_id")
+    test_case_title = serializers.CharField(source="test_case.test_title")
+    test_case_status = serializers.CharField(source="test_case.status")
+    module_name = serializers.CharField(source="test_case.module.module_name")
+    assigned_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S")
+
+    class Meta:
+        model = UserTestCase
+        fields = ["test_case_id","test_case_title", "test_case_status", "module_name", "status", "assigned_at", "test_case_test_id"]
+
+
+
+    
+
+# ProjectTaskSerializer
+
+class ProjectTaskSerializer(serializers.ModelSerializer):
+
+    module = serializers.StringRelatedField()
+    assigned_to = serializers.StringRelatedField()
+
+    class Meta:
+        model = Task
+        fields = ["task_id", "task_name", "task_description", "assigned_to", "priority", "status", "created_at", "due_date"]
+
+
+class ProjectDetailSerializer(serializers.ModelSerializer):
+    project_team = ProjectTeamSerializer(many=True, read_only=True)
+    modules = ModuleSerializer(many=True, read_only=True)
+    progress = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Project
+        fields = ["project_id", "project_name", "project_description", "created_by", "project_lead", "deadline", "status", "progress", "project_team", "modules"]

@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .serializers import LoginSerializer, PasswordResetSerializer, UserSerializer, ChangePasswordSerializer, RoleSerializer, EditSerializer, CreateUserSerializer, AddProfilePictureSerializer
+from .serializers import LoginSerializer, PasswordResetSerializer, UserSerializer, ChangePasswordSerializer, RoleSerializer, EditSerializer, CreateUserSerializer, AddProfilePictureSerializer, ProjectDetailSerializer
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
@@ -541,12 +541,12 @@ class ProjectListView(ListAPIView):
         project_team_projects = Project.objects.filter(project_team__user=user, project_team__status="active")
         return (project_lead_projects | project_team_projects).distinct().order_by("-created_at")
 
+
 # project detail view
 
 class ProjectDetailView(RetrieveAPIView):
     queryset = Project.objects.all()
-    serializer_class = ProjectListSerializer
-    permission_classes = [IsAuthenticated]
+    serializer_class = ProjectDetailSerializer
     lookup_field = "pk"
 
 
@@ -634,16 +634,27 @@ class ModuleTaskView(ListCreateAPIView):
         return Task.objects.filter(module_id=module_id).order_by("-priority")
 
     def create(self, request, *args, **kwargs):
-        user=self.request.user
+        user = self.request.user
         print("request data", request.data)
 
-
+        # Check permission - Only Project Managers can create tasks
         if not user.role or user.role.role_name.lower() != "project manager":
             raise PermissionDenied("Permission Denied")
 
         module_id = kwargs["module_id"]
         module = get_object_or_404(Module, id=module_id)
 
+        # Extract user_id from request data
+        user_id = request.data.get("assigned_to")  # Expecting user_id
+
+        # Validate if user_id exists in ProjectTeam for the same project
+        project_team = ProjectTeam.objects.filter(user_id=user_id, project=module.project, status="active").first()
+
+        if not project_team:
+            return Response({"error": "User is not part of the project team"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Add ProjectTeam ID instead of User ID
+        request.data["assigned_to"] = project_team.id  # Assigning ProjectTeam ID
 
         serializer = self.get_serializer(data=request.data, context={"module": module})
 
@@ -655,20 +666,12 @@ class ModuleTaskView(ListCreateAPIView):
             if comment_content:
                 TaskComment.objects.create(user=request.user, task=task, content=comment_content)
 
-            # Send notification to assigned users
-            assigned_users = []
-
-            if isinstance(task.assigned_to, ProjectTeam):
-                if task.assigned_to.user:  # Ensure ProjectTeam has a User
-                    assigned_users.append(task.assigned_to.user)
-            elif isinstance(task.assigned_to, User):  # Direct User assignment
-                assigned_users.append(task.assigned_to)
-
-            for user in assigned_users:
-                Notification.objects.create(
-                    user=user,
-                    message=f"You have been assigned a new task: {task.task_name}. Due Date: {task.due_date}"
-                )
+            # Send notification to assigned user
+            assigned_user = project_team.user  # Get the user from ProjectTeam
+            Notification.objects.create(
+                user=assigned_user,
+                message=f"You have been assigned a new task: {task.task_name}. Due Date: {task.due_date}"
+            )
 
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -686,11 +689,9 @@ class ProjectDevelopersView(ListAPIView):
         project = get_object_or_404(Project, id=project_id)
 
         # Filter users in the project team who have the role "Developer"
-        developers = ProjectTeam.objects.filter(
-            project=project, status="active", user__role__role_name="Developer"
-        ).values_list("user", flat=True)
-
-        return User.objects.filter(id__in=developers)
+        return ProjectTeam.objects.filter(
+        project=project, status="active", user__role__role_name="Developer")
+        
     
 
 
@@ -760,6 +761,21 @@ def update_task_status(request, pk):
     task.status = new_status
     task.save()
 
+    module = task.module
+    tasks = Task.objects.filter(module=module)
+    
+    if tasks.exists():
+        completed_tasks = tasks.filter(status=TaskStatus.COMPLETED).count()
+        if completed_tasks == tasks.count():
+            module.status = ModuleStatus.COMPLETED
+        else:
+            module.status = ModuleStatus.IN_PROGRESS
+    else:
+        module.status = ModuleStatus.PENDING
+
+    module.save(update_fields=['status'])  # Save the module status update
+
+
     return Response({"message": f"Task status updated to {new_status}", "task": TaskSerializer(task).data}, status=status.HTTP_200_OK)
 
 
@@ -782,6 +798,16 @@ class TrakTaskListView(ListAPIView):
         task_count = queryset.count()
 
         return Response({"task_count": task_count, "tasks":serializer.data})
+    
+
+# project list in QA
+class QAProjectListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = LeadProjectListSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        return Project.objects.filter(project_team__user=user, project_team__status="active").distinct()
 
 
 # module list in QA
@@ -798,9 +824,12 @@ class ProjectCompletedModuleView(ListAPIView):
     
 
 
-from .serializers import TestTypeSerializer, TestCaseSerializer, TestEngineersSerializer
-from.models import TestType, TestCase, TestComment, UserTestCase, TaskStatus
+from .serializers import TestTypeSerializer, TestCaseSerializer, TestEngineersSerializer, AssignedTestCaseSerializer, UserTestCaseSerializer
+from.models import TestType, TestCase, TestComment, UserTestCase, TaskStatus, UserTestCaseStatus, TestStep
+from datetime import date
 
+
+# test type list and create
 
 class TestTypeLisCreateView(ListCreateAPIView):
 
@@ -811,20 +840,19 @@ class TestTypeLisCreateView(ListCreateAPIView):
 
 
 # list test engineers in a project
-class TestEngineerView(ListAPIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = TestEngineersSerializer
 
-    def get_queryset(self):
+class TestEngineerView(ListAPIView):
+   permission_classes = [IsAuthenticated]
+   serializer_class = TestEngineersSerializer
+   
+   def get_queryset(self):
         project_id = self.kwargs["project_id"]
         project = get_object_or_404(Project, id=project_id)
 
         # Filter users in the project team who have the role "Developer"
-        testEngineers = ProjectTeam.objects.filter(
-            project=project, status="active", user__role__role_name="Test Engineer"
-        ).values_list("user", flat=True)
-
-        return User.objects.filter(id__in=testEngineers)
+        return ProjectTeam.objects.filter(
+        project=project, status="active", user__role__role_name="Test Engineer")
+        
     
 
 # Test create and list
@@ -835,55 +863,61 @@ class ModuleTestCaseView(ListCreateAPIView):
     serializer_class = TestCaseSerializer
 
     def get_queryset(self):
-
         module_id = self.kwargs["module_id"]
-        return TestCase.objects.filter(module_id = module_id).order_by("-priority")
+        return TestCase.objects.filter(module_id=module_id).order_by("-priority")
     
     def create(self, request, *args, **kwargs):
-
         user = self.request.user
 
         if not user.role or user.role.role_name.lower() != "qa":
-            return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied("Permission Denied")
         
-        module_id = kwargs["module_id"]
+        module_id = kwargs['module_id']
         module = get_object_or_404(Module, id = module_id)
 
-        serializer = self.get_serializer(data = request.data, context = {"module": module})
+        serializer = self.get_serializer(data=request.data, context={"module": module})
+        print("request data:", request.data)
 
         if serializer.is_valid():
-            test_case = serializer.save(module = module, created_by = request.user)
+            testcase = serializer.save(module = module, created_by = request.user)
 
-            # get assigned users from request data
+            assigned_user_ids = request.data.get("assigned_users", [])  
 
-            assigned_user_ids = request.data.get("assigned_users", [])
-             
-            #assign test case to project team members
-
+             # Assign test case to project team members
             for user_id in assigned_user_ids:
-                project_team_member = ProjectTeam.objects.filter(user_id = user_id, project = module.project)
-                for project_team_member in project_team_member:
-                    UserTestCase.objects.create(test_case=test_case, assigned_to=project_team_member)
-           
+                project_team_member = ProjectTeam.objects.filter(user_id=user_id, project=module.project).first()
 
-            # comment creation
-
+                if project_team_member:
+                    UserTestCase.objects.create(test_case=testcase, assigned_to=project_team_member)
+        
+            # Handle Test Steps (Create Test Steps if provided)
+            test_steps_data = request.data.get("test_steps", [])
+            for step in test_steps_data:
+                TestStep.objects.create(
+                    test_case=testcase,
+                    step_number=step["step_number"],
+                    step_description=step["step_description"],
+                    expected_result=step["expected_result"]
+                )
+                
+            # Comment creation
             comment_content = request.data.get("comment", "").strip()
             if comment_content:
-                TestComment.objects.create(user = request.user, test = test_case, content = comment_content)
+                TestComment.objects.create(user=request.user, test=testcase, content=comment_content)
 
-            # notify assigned users
+            # Notify assigned users
             for user_id in assigned_user_ids:
                 user = get_object_or_404(User, id=user_id)
                 Notification.objects.create(
-                    user = user,
-                    message = f"A new test case '{test_case.test_title}' has been created in module '{module.module_name}'." 
+                    user=user,
+                    message=f"A new test case '{testcase.test_title}' has been created in module '{module.module_name}'."
                 )
-
-            return Response(serializer.data, status = status.HTTP_201_CREATED)
+            
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
-    
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 # developer dashboard task statistics
@@ -921,6 +955,7 @@ def developer_recent_tasks(request):
 
     task_data = [
         {
+            "id": task.id,
             "task_id": task.task_id,
             "task_name": task.task_name,
             "status": task.status,
@@ -933,3 +968,206 @@ def developer_recent_tasks(request):
     return Response({"recent_tasks": task_data}, status=status.HTTP_200_OK)
 
 
+# developer dashboard calendar
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+
+def upcoming_deadlines(request):
+
+    today = now().date()
+
+    upcoming_Tasks = Task.objects.filter(
+        assigned_to__user = request.user, due_date__gte = today
+    ).order_by("due_date").exclude(status="completed").select_related("assigned_to", "module", "module__project").order_by("due_date")
+
+
+    serializer = TaskSerializer(upcoming_Tasks, many = True).data
+
+    return Response({"upcoming_deadlines": serializer}, status=200)
+
+
+
+# test engineer test list
+
+class AssignedTestCaseListView(ListAPIView):
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssignedTestCaseSerializer
+
+    def get_queryset(self):
+
+        user = self.request.user
+        project_team = ProjectTeam.objects.filter(user = user, status = "active").first()
+
+        if not project_team:
+            return UserTestCase.objects.none()
+        
+        return UserTestCase.objects.filter(assigned_to = project_team)
+    
+
+# Track test case 
+
+class TrackAssignedTestCaseListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AssignedTestCaseSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        project_team = ProjectTeam.objects.filter(user=user, status="active").first()
+
+        if not project_team:
+            return UserTestCase.objects.none()
+
+        return UserTestCase.objects.filter(assigned_to=project_team).exclude(status=UserTestCaseStatus.COMPLETED)
+    
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        total_test_cases = queryset.count()
+        high_priority_cases = queryset.filter(test_case__priority="high").count()
+
+        response_data = {
+            "total_test_cases": total_test_cases,
+            "assigned_test_cases": self.serializer_class(queryset, many=True).data
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+# test case summary in tE dashboard
+
+
+class TestCaseSummaryView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        project_team = ProjectTeam.objects.filter(user = user, status = "active").first()
+
+        if not project_team:
+            return Response({"message": "No active project assigned"}, status=status.HTTP_400)
+        
+        total_test_cases = UserTestCase.objects.filter(assigned_to = project_team).count()
+        completed_test_cases = UserTestCase.objects.filter(
+            assigned_to = project_team, status = UserTestCaseStatus.COMPLETED
+        ).count()
+        
+        pending_test_cases = total_test_cases - completed_test_cases
+
+        return Response({
+            "total_test_cases" : total_test_cases,
+            "completed_test_cases": completed_test_cases,
+            "pending_test_cases": pending_test_cases
+        })
+    
+
+# TE recent activity
+
+class RecentTestEngineerActivities(ListAPIView):
+
+    serializer_class = UserTestCaseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return UserTestCase.objects.filter(assigned_to__user=user).order_by("-assigned_at")[:10]
+    
+
+# TE upcoming events
+
+class TestEngineerUpcomingDueView(ListAPIView):
+
+    serializer_class = AssignedTestCaseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        today = date.today()
+
+        return UserTestCase.objects.filter(
+            assigned_to__user = user,
+            test_case__due_date__gte = today
+        ).order_by("test_case__due_date")
+    
+
+
+# detailed test case view
+class TestCaseDetailView(RetrieveAPIView):
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = TestCaseSerializer
+
+    def get_queryset(self):
+        return TestCase.objects.all()
+    
+    def get_object(self):
+        test_case_id = self.kwargs.get("pk") 
+        return get_object_or_404(TestCase, id = test_case_id)
+    
+    
+from rest_framework.generics import RetrieveUpdateAPIView
+
+# edit test case
+class TestUpdateView(RetrieveUpdateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TestCaseSerializer
+    lookup_field = "pk"
+
+    def get_queryset(self):
+        return TestCase.objects.all()
+    
+    # def get_object(self):
+    #     test_case_id = self.kwargs.get("id")
+    #     return get_object_or_404(TestCase, id = test_case_id)
+    
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        # Only allow QA role to edit test cases
+        if not user.role or user.role.role_name.lower() != "qa":
+            return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
+        
+
+        test_case = self.get_object()
+        serializer = self.get_serializer(test_case, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            updated_test_case = serializer.save()
+
+            # Update Assigned Users (if provided)
+            assigned_user_ids = request.data.get("assigned_users", None)
+            if assigned_user_ids is not None:
+
+                # Remove old assignments and add new ones
+                UserTestCase.objects.filter(test_case=updated_test_case).delete()
+                for user_id in assigned_user_ids:
+                    project_team_member = ProjectTeam.objects.filter(user_id=user_id, project=updated_test_case.module.project).first()
+                    if project_team_member:
+                        UserTestCase.objects.create(test_case=updated_test_case, assigned_to=project_team_member)
+                    else:
+                        return Response(
+                            {"error": f"User with ID {user_id} is not part of the project team."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+            # Update Test Steps (if provided)
+            test_steps_data = request.data.get("test_steps", None)
+            if test_steps_data is not None:
+                # Remove old steps and add new steps
+                TestStep.objects.filter(test_case=updated_test_case).delete()
+                for step in test_steps_data:
+                    # It's assumed that each step dictionary includes "step_number", "step_description", and "expected_result"
+                    TestStep.objects.create(
+                        test_case=updated_test_case,
+                        step_number=step["step_number"],
+                        step_description=step["step_description"],
+                        expected_result=step["expected_result"]
+                    )
+
+            # Optionally, update Test Comments if a new comment is provided
+            comment_content = request.data.get("comment", "").strip()
+            if comment_content:
+                TestComment.objects.create(user=user, test=updated_test_case, content=comment_content)
+
+            return Response(self.get_serializer(updated_test_case).data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, ProjectDetailView
+from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, upcoming_deadlines, QAProjectListView, AssignedTestCaseListView, ProjectDetailView, TrackAssignedTestCaseListView, TestCaseSummaryView, RecentTestEngineerActivities, TestEngineerUpcomingDueView, TestCaseDetailView, TestUpdateView
 
 from rest_framework_simplejwt.views import TokenRefreshView, TokenObtainPairView
 
@@ -41,8 +41,6 @@ urlpatterns = [
 
     path('project_list/', ProjectListView.as_view(), name = 'project_list'),
 
-    path('project_detail/<int:pk>/', ProjectDetailView.as_view(), name = 'project_detail'),
-
     path('users_list_by_role/', UserListByRoleView.as_view(), name='users_list_by_role'),
 
     path("project/<int:pk>/archive/", ProjectArchiveAPIView.as_view(), name = "project-archive"),
@@ -68,6 +66,8 @@ urlpatterns = [
     path('developer/tasks/<int:pk>/update-status/', update_task_status, name='update-task-status'),
 
     path('developer/track_task_list/', TrakTaskListView.as_view(), name='track_task'),
+
+    path('qa/projects/', QAProjectListView.as_view(), name = 'qa-projects'),
     
     path('projects/<int:project_id>/completed_modules/', ProjectCompletedModuleView.as_view(), name='project-completed_module'),
 
@@ -82,6 +82,27 @@ urlpatterns = [
     path('developer/task-status/', developer_task_statistics, name='developer-task'),
 
     path('developer/recent-tasks/', developer_recent_tasks, name='developer-recent-tasks'),
+
+    path('developer/upcoming-deadlines/', upcoming_deadlines, name = 'upcoming-deadlines'),
+
+    path('assigned-tests/', AssignedTestCaseListView.as_view(), name='assigned-tests'),
+
+    path('project/details/<int:pk>/', ProjectDetailView.as_view(), name='project-details'),
+
+    path('track-assigned-tests/', TrackAssignedTestCaseListView.as_view(), name='track-assigned-tests'),
+
+    path('test-cases-summary/', TestCaseSummaryView.as_view(), name='test-case-summary'),
+
+    path('test-engineer/recent-activities/', RecentTestEngineerActivities.as_view(), name='recent-test-activities'),
+
+    path('test-engineer/upcoming-due/', TestEngineerUpcomingDueView.as_view(), name = 'test-engineer-upcoming-dues'),
+
+    path('test-cases/<int:pk>/', TestCaseDetailView.as_view(), name = 'test-case-detail'),
+
+    path('test-cases/<int:pk>/update/', TestUpdateView.as_view(), name="test-case-update"),
+
+    
+
 
 
     
