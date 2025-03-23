@@ -12,3 +12,6 @@ cd tcms
 python manage.py collectstatic --no-input
 python manage.py makemigrations
 python manage.py migrate
+
+# Create superuser
+python ../create_superuser.py
