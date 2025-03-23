@@ -40,11 +40,15 @@ class User(AbstractUser):
 
 
     def save(self, *args, **kwargs):
-    # Check if role exists before accessing it
-     if hasattr(self, 'role') and self.role is not None:
-        if self.role.role_name.lower() != "developer":
-            self.specialization = None
-            pass
+     if not hasattr(self, '_role_cache'):
+        # This is a safer way to check if role exists without triggering the exception
+        try:
+            self.role  # This will trigger the exception if role doesn't exist
+        except User.role.RelatedObjectDoesNotExist:
+            # Handle missing role case
+            from tcms_app.models import Role
+            admin_role, created = Role.objects.get_or_create(role_name="Admin")
+            self.role = admin_role
      super().save(*args, **kwargs)
 
     def __str__(self):
