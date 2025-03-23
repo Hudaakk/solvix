@@ -522,6 +522,36 @@ class CreateProjectView(CreateAPIView):
             )
     
 
+#Edit project
+
+class UpdateProjectView(RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ProjectSerializer
+    queryset = Project.objects.all()
+
+    def get_object(self):
+
+        project_id = self.kwargs.get("project_id")
+        return get_object_or_404(Project, project_id = project_id)
+    
+    def perform_update(self, serializer):
+        user = self.request.user
+        # Only allow project managers to update the project.
+        if not user.role or user.role.role_name.lower() != "project manager":
+            raise PermissionDenied("Permission Denied")
+        # Save the updated project.
+        project = serializer.save()
+
+        # Optionally, update notifications if team members change or if the project is updated.
+        # Here we notify all team members that the project has been updated.
+        for team_member in project.project_team.all():
+            Notification.objects.create(
+                user=team_member.user,
+                message=f"The project '{project.project_name}' has been updated."
+            )
+
+
+
 #projectListView
 
 class ProjectListView(ListAPIView):
@@ -615,7 +645,7 @@ class ProjectModuleView(ListCreateAPIView):
         project = get_object_or_404(Project, id = project_id)
 
         serializer = self.get_serializer(data=request.data, context={"project": project})
-        
+
         if serializer.is_valid():
             module = serializer.save(project=project)
             # If the project is still pending, update its status to in_progress
@@ -1504,3 +1534,24 @@ class RecentProjectsView(ListAPIView):
     def get_queryset(self):
         # Order by created_at descending so that the first project is the most recently added.
         return Project.objects.all().order_by('-created_at')
+    
+
+class UserStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        users = User.objects.all()
+        serialized_users = UserSerializer(users, many=True)
+
+        active_users = User.objects.filter(status="active")
+        serialized_active_users = UserSerializer(active_users, many=True)
+
+        inactive_users = User.objects.filter(status="inactive")
+        
+        return Response({
+            'users': serialized_users.data,
+            'active_users': serialized_active_users.data,
+            'total_users': users.count(),
+            'active_count': active_users.count(),
+            'inactive_count': inactive_users.count(),
+        })

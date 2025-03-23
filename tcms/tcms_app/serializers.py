@@ -611,3 +611,5 @@ class ProjectBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ['project_id', 'project_name', 'project_description','id']
+
+    
