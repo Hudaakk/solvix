@@ -1,31 +1,26 @@
-#!/usr/bin/env python
+# create_superuser.py
 import os
-import sys
 import django
 
-# Add the current directory to the Python path
-sys.path.append(os.getcwd())
-
-# Set the Django settings module
-# If your settings.py is at tcms/tcms/settings.py, use:
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tcms.settings')
 django.setup()
 
 from django.contrib.auth import get_user_model
+from tcms_app.models import Role
+
 User = get_user_model()
 
-# Define superuser credentials
-SUPERUSER_USERNAME = 'admin'
-SUPERUSER_EMAIL = 'admin@example.com'
-SUPERUSER_PASSWORD = 'your-secure-password'  # Change this to a secure password
+def create_superuser():
+    # Ensure a default role exists
+    role, created = Role.objects.get_or_create(role_name='Developer')
 
-# Create superuser if it doesn't exist
-if not User.objects.filter(username=SUPERUSER_USERNAME).exists():
+    # Create the superuser
     User.objects.create_superuser(
-        username=SUPERUSER_USERNAME,
-        email=SUPERUSER_EMAIL,
-        password=SUPERUSER_PASSWORD
+        username='admin',
+        email='admin@example.com',
+        password='admin@123',
+        role=role  # Set the role here
     )
-    print(f"Superuser '{SUPERUSER_USERNAME}' created successfully")
-else:
-    print(f"Superuser '{SUPERUSER_USERNAME}' already exists")
+
+if __name__ == '__main__':
+    create_superuser()

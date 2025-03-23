@@ -40,10 +40,10 @@ class User(AbstractUser):
 
 
     def save(self, *args, **kwargs):
-
-        if self.role.role_name.lower() != "developer":
-            self.specialization = None
-            
+        if self.role is None:
+            # Assign a default role if none is set
+            default_role, created = Role.objects.get_or_create(role_name='Developer')
+            self.role = default_role
         super().save(*args, **kwargs)
 
     def __str__(self):
