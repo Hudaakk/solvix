@@ -614,17 +614,26 @@ class ProjectBasicSerializer(serializers.ModelSerializer):
     
 # user project serializer
 
-class UserProjectSerializer(serializers.ModelSerializer):
-    project_name = serializers.CharField(source='project.project_name', read_only=True)
-    
-    class Meta:
-        model = ProjectTeam
-        fields = ['project_name']
-
 class UserWithProjectsSerializer(serializers.ModelSerializer):
-    # This field uses the reverse relation from User to ProjectTeam (related_name="user_project_team")
-    projects = UserProjectSerializer(source='user_project_team', many=True, read_only=True)
+    associated_projects = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'projects']
+        fields = ['id', 'username', 'email', 'associated_projects']
+
+    def get_associated_projects(self, obj):
+        # Get projects where the user is the creator
+        created_projects = list(obj.created_projects.all())
+        # Get projects where the user is the project lead (via the related_name "lead_projects")
+        lead_projects = list(obj.lead_projects.all())
+        # Get projects where the user is in the project team (via the related_name "user_project_team")
+        team_projects = [pt.project for pt in obj.user_project_team.all()]
+
+        # Combine all projects and remove duplicates based on project_id.
+        all_projects_dict = {}
+        for p in created_projects + lead_projects + team_projects:
+            all_projects_dict[p.project_id] = p
+        all_projects = list(all_projects_dict.values())
+
+        # Return a list of dictionaries with the project id and name.
+        return [{"project_id": p.project_id, "project_name": p.project_name} for p in all_projects]

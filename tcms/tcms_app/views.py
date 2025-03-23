@@ -1524,7 +1524,9 @@ class AdminProjectStatsView(APIView):
         return Response(data)
 
 
-from .serializers import ProjectBasicSerializer, UserProjectSerializer, UserWithProjectsSerializer
+from .serializers import ProjectBasicSerializer, UserWithProjectsSerializer
+from django.db.models import Q
+
 
 #admin dashboard project management
 class RecentProjectsView(ListAPIView):
@@ -1558,7 +1560,14 @@ class UserStatusView(APIView):
     
 
 #admin dashboard
-class UserProjectsListView(ListAPIView):
+class UsersWithProjectsListView(ListAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = User.objects.all()
     serializer_class = UserWithProjectsSerializer
+
+    def get_queryset(self):
+        # Filter users that are either the creator, project lead, or part of a project team.
+        return User.objects.filter(
+            Q(created_projects__isnull=False) |
+            Q(lead_projects__isnull=False) |
+            Q(user_project_team__isnull=False)
+        ).distinct()
