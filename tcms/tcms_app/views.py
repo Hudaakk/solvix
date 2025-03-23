@@ -1524,7 +1524,7 @@ class AdminProjectStatsView(APIView):
         return Response(data)
 
 
-from .serializers import ProjectBasicSerializer, UserWithProjectsSerializer
+from .serializers import ProjectBasicSerializer, UserWithProjectsSerializer, TaskCommentSerializer, TestCommentSerializer
 from django.db.models import Q
 
 
@@ -1571,3 +1571,24 @@ class UsersWithProjectsListView(ListAPIView):
             Q(lead_projects__isnull=False) |
             Q(user_project_team__isnull=False)
         ).distinct()
+    
+#Add task comments
+
+class TaskCommentCreateView(CreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TaskCommentSerializer
+
+    def perform_create(self, serializer):
+        # Automatically set the user from the request.
+        serializer.save(user=self.request.user)
+
+
+#add test comments
+
+class TaskCommentCreateView(CreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TaskCommentSerializer
+
+    def perform_create(self, serializer):
+        # Automatically set the user from the request.
+        serializer.save(user=self.request.user)
