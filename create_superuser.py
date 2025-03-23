@@ -1,8 +1,13 @@
 #!/usr/bin/env python
 import os
+import sys
 import django
 
+# Add the current directory to the Python path
+sys.path.append(os.getcwd())
+
 # Set the Django settings module
+# If your settings.py is at tcms/tcms/settings.py, use:
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tcms.settings')
 django.setup()
 
@@ -12,7 +17,7 @@ User = get_user_model()
 # Define superuser credentials
 SUPERUSER_USERNAME = 'admin'
 SUPERUSER_EMAIL = 'admin@example.com'
-SUPERUSER_PASSWORD = 'admin@123'  # Change this to a secure password
+SUPERUSER_PASSWORD = 'your-secure-password'  # Change this to a secure password
 
 # Create superuser if it doesn't exist
 if not User.objects.filter(username=SUPERUSER_USERNAME).exists():
