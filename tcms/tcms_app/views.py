@@ -615,12 +615,15 @@ class ProjectModuleView(ListCreateAPIView):
         project = get_object_or_404(Project, id = project_id)
 
         serializer = self.get_serializer(data=request.data, context={"project": project})
-
+        
         if serializer.is_valid():
-            serializer.save(project = project)
+            module = serializer.save(project=project)
+            # If the project is still pending, update its status to in_progress
+            if project.status == ProjectStatus.PENDING:
+                project.status = ProjectStatus.IN_PROGRESS
+                project.save(update_fields=['status'])
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
 
 
 # create and list task
