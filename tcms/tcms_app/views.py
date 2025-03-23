@@ -1524,7 +1524,7 @@ class AdminProjectStatsView(APIView):
         return Response(data)
 
 
-from .serializers import ProjectBasicSerializer
+from .serializers import ProjectBasicSerializer, UserProjectSerializer, UserWithProjectsSerializer
 
 #admin dashboard project management
 class RecentProjectsView(ListAPIView):
@@ -1555,3 +1555,10 @@ class UserStatusView(APIView):
             'active_count': active_users.count(),
             'inactive_count': inactive_users.count(),
         })
+    
+
+#admin dashboard
+class UserProjectsListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = User.objects.all()
+    serializer_class = UserWithProjectsSerializer

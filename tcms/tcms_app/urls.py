@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, upcoming_deadlines, QAProjectListView, AssignedTestCaseListView, ProjectDetailView, TrackAssignedTestCaseListView, TestCaseSummaryView, RecentTestEngineerActivities, TestEngineerUpcomingDueView, TestCaseDetailView, TestUpdateView, UpdateTestStepStatus,CompleteTestCaseResultView, FailedTestCaseByModuleView, BugsByTestCaseView,BugDetailView, ModuleDeveloperView, AssignBugView, QATestCaseStatsView, RecentTestCaseActivityView, UpcomingTestCaseDeadlinesView, AdminProjectStatsView, RecentProjectsView, UpdateProjectView, UserStatusView
+from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, upcoming_deadlines, QAProjectListView, AssignedTestCaseListView, ProjectDetailView, TrackAssignedTestCaseListView, TestCaseSummaryView, RecentTestEngineerActivities, TestEngineerUpcomingDueView, TestCaseDetailView, TestUpdateView, UpdateTestStepStatus,CompleteTestCaseResultView, FailedTestCaseByModuleView, BugsByTestCaseView,BugDetailView, ModuleDeveloperView, AssignBugView, QATestCaseStatsView, RecentTestCaseActivityView, UpcomingTestCaseDeadlinesView, AdminProjectStatsView, RecentProjectsView, UpdateProjectView, UserStatusView, UserProjectsListView
 
 from rest_framework_simplejwt.views import TokenRefreshView, TokenObtainPairView
 
@@ -129,6 +129,9 @@ urlpatterns = [
     path('admin/recent-projects/', RecentProjectsView.as_view(), name='recent-projects'),
 
     path('admin/user-stats/', UserStatusView.as_view(), name='admin-user-stats'),
+
+    path('admin/user-projects/', UserProjectsListView.as_view(), name='user-projects-list'),
+
 
 
 

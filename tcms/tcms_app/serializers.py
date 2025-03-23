@@ -436,7 +436,6 @@ class TestCaseSerializer(serializers.ModelSerializer):
 
 
 
-
 # test engineers list
 
 class TestEngineersSerializer(serializers.ModelSerializer):
@@ -613,3 +612,19 @@ class ProjectBasicSerializer(serializers.ModelSerializer):
         fields = ['project_id', 'project_name', 'project_description','id']
 
     
+# user project serializer
+
+class UserProjectSerializer(serializers.ModelSerializer):
+    project_name = serializers.CharField(source='project.project_name', read_only=True)
+    
+    class Meta:
+        model = ProjectTeam
+        fields = ['project_name']
+
+class UserWithProjectsSerializer(serializers.ModelSerializer):
+    # This field uses the reverse relation from User to ProjectTeam (related_name="user_project_team")
+    projects = UserProjectSerializer(source='user_project_team', many=True, read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'projects']
