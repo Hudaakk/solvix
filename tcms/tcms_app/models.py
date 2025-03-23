@@ -74,43 +74,62 @@ class Project(models.Model):
         if not self.project_lead:
             self.project_lead = self.created_by
 
-        # Ensure the instance is saved before querying related models
+        # Save first so that related objects (modules, etc.) are available
+        super().save(*args, **kwargs)
 
-        is_new = self._state.adding  # Check if the instance is new
+        # Update project status based on modules and test cases progress
+        module_qs = self.modules.all()
+        total_modules = module_qs.count()
+        if total_modules:
+            completed_modules = module_qs.filter(status=ModuleStatus.COMPLETED).count()
+            module_progress = (completed_modules / total_modules) * 100
+        else:
+            module_progress = 0
 
-        super().save(*args, **kwargs)  # Save the project first
+        test_qs = TestCase.objects.filter(module__project=self)
+        total_tests = test_qs.count()
+        if total_tests:
+            completed_tests = test_qs.filter(status=TestCaseStatus.COMPLETED).count()
+            test_progress = (completed_tests / total_tests) * 100
+        else:
+            test_progress = 0
 
-        if not is_new:  # Query related objects only if it's not a new project
-            tasks = Task.objects.filter(module__project=self)
-            test_cases = TestCase.objects.filter(module__project=self)
+        # Combined progress (you can adjust the weight as needed)
+        combined_progress = (module_progress + test_progress) / 2
 
-            if tasks.exists() and test_cases.exists():
-                completed_tasks = tasks.filter(status=TaskStatus.COMPLETED).count()
-                completed_tests = test_cases.filter(status=TestCaseStatus.APPROVED).count()
+        # Update status: Only mark project COMPLETED if combined progress is 100.
+        if combined_progress == 100:
+            self.status = ProjectStatus.COMPLETED
+        else:
+            # If not completed, we can mark it as IN_PROGRESS if there's any progress.
+            self.status = ProjectStatus.IN_PROGRESS if combined_progress > 0 else ProjectStatus.PENDING
 
-                if completed_tasks == tasks.count() and completed_tests == test_cases.count():
-                    self.status = ProjectStatus.COMPLETED
-                else:
-                    self.status = ProjectStatus.IN_PROGRESS
-            else:
-                self.status = ProjectStatus.PENDING
-
-        super().save(update_fields=['status'])
+        # Save again to update status.
+        super().save(update_fields=['status', 'updated_at'])
 
     def __str__(self):
         return self.project_name
-    
+
     @property
     def progress(self):
-        task_stats = Task.objects.filter(module__project=self).aggregate(
-        total=Count('id'), completed=Count('id', filter=models.Q(status=TaskStatus.COMPLETED)))
-    
-        total = task_stats["total"]
-        completed = task_stats["completed"]
+        module_qs = self.modules.all()
+        total_modules = module_qs.count()
+        if total_modules:
+            completed_modules = module_qs.filter(status=ModuleStatus.COMPLETED).count()
+            module_progress = (completed_modules / total_modules) * 100
+        else:
+            module_progress = 0
 
-        return round((completed / total) * 100, 2) if total > 0 else 0
+        test_qs = TestCase.objects.filter(module__project=self)
+        total_tests = test_qs.count()
+        if total_tests:
+            completed_tests = test_qs.filter(status=TestCaseStatus.COMPLETED).count()
+            test_progress = (completed_tests / total_tests) * 100
+        else:
+            test_progress = 0
 
-
+        combined_progress = (module_progress + test_progress) / 2
+        return round(combined_progress, 2)
 #Project Team
 
 class ProjectTeam(models.Model):
