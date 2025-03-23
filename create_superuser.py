@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from tcms_app.models import Role
+import uuid  # Import this if you want to use UUID
 
 User = get_user_model()
 try:
@@ -13,6 +14,9 @@ try:
             last_name="Huda",
             is_staff=True,
             is_superuser=True,
+            user_id=str(uuid.uuid4()),  # Generate a unique ID
+            # Alternatively, use any other method to generate a unique ID
+            # user_id="admin_user_1",
         )
         # Set the role after creation
         user.set_password("huda@123")
