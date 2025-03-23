@@ -163,8 +163,9 @@ class ProjectListSerializer(serializers.ModelSerializer):
         fields = ["id","project_id", "project_name","project_description","project_lead","project_team", "progress","status","created_at","deadline","bugs_count", "created_date"]
     
     def get_bugs_count(self, obj):
-        return Bug.objects.filter(test_case__module__project = obj).count()    
+        return Bug.objects.filter(test_case_result__test_case__module__project=obj).count()
     
+
     def get_created_date(self, obj):
         return localtime(obj.created_at).strftime("%Y-%m-%d")
 
@@ -315,15 +316,47 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = ["id", "user", "message", "status", "created_at"]
 
 
+from .models import UserTestStepResult, UserTestCaseStatus
+
+
+class UserTestStepResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserTestStepResult
+        fields = ["id", "status", "execution_date", "remarks"]
+
+
 # test step serializer
 class TestStepSerializer(serializers.ModelSerializer):
+    status_details = UserTestStepResultSerializer(source="user_results", many=True, read_only=True)
+
     class Meta:
         model = TestStep
-        fields = ["id", "step_number","step_description", "expected_result","status"]
+        fields = ["id", "step_number", "step_description", "expected_result", "status_details"]
 
+    # def get_status_details(self, obj):
+    #     request = self.context.get("request", None)
 
+    #     if request and request.user.is_authenticated:
+    #         user = request.user
+    #         user_test_case = UserTestCase.objects.filter(
+    #             test_case=obj.test_case, assigned_to__user=user
+    #         ).first()
 
+    #         if user_test_case:
+    #             user_test_step_result = UserTestStepResult.objects.filter(
+    #                 user_test_case=user_test_case, test_step=obj
+    #             ).first()
 
+    #             if user_test_step_result:
+    #                 return UserTestStepResultSerializer(user_test_step_result).data
+
+    #     # Default response if no result found
+    #     return {
+    #         "id": None,
+    #         "status": "not_run",
+    #         "execution_date": None,
+    #         "remarks": "No remarks"
+    #     }
 
 # test_type
 
@@ -343,13 +376,19 @@ class TestCaseSerializer(serializers.ModelSerializer):
     due_status = serializers.SerializerMethodField()
     test_comments = serializers.SerializerMethodField()
     test_steps = TestStepSerializer(many = True, read_only = True)
+    module_name = serializers.CharField(source="module.module_name", read_only=True)
+    project_name = serializers.CharField(source="module.project.project_name", read_only=True)
+    user_test_case_id = serializers.SerializerMethodField()  # New field
+
+
 
     class Meta:
         model = TestCase
         fields = [
             "id", "test_id", "test_title", "test_description",
             "priority", "status", "test_type", "created_at", "updated_at",
-            "precondition", "postcondition", "test_type_name", "assigned_users", "created_by", "progress", "due_date", "due_status", "test_comments", "test_steps"
+            "precondition", "postcondition", "test_type_name", "assigned_users", "created_by", "progress", "due_date", "due_status", "test_comments", "test_steps", 
+            "module_name","project_name", "user_test_case_id"
         ]
         extra_kwargs = {"created_by": {"read_only": True}}
 
@@ -383,6 +422,19 @@ class TestCaseSerializer(serializers.ModelSerializer):
     def get_test_comments(self, obj):
         comments = obj.test_comments.all().order_by("-created_at")
         return TestCommentSerializer(comments, many = True).data
+    
+    def get_user_test_case_id(self, obj):
+        request = self.context.get("request")
+        if not request:
+            return None
+        user = request.user
+        try:
+            utc = UserTestCase.objects.get(test_case=obj, assigned_to__user=user)
+            return utc.id
+        except UserTestCase.DoesNotExist:
+            return None
+
+
 
 
 # test engineers list
@@ -411,12 +463,13 @@ class TestEngineersSerializer(serializers.ModelSerializer):
 
 
 class AssignedTestCaseSerializer(serializers.ModelSerializer):
+    user_test_case_id = serializers.IntegerField(source = "id")
     test_case = TestCaseSerializer(read_only=True)  # Use the full TestCaseSerializer
     progress = serializers.SerializerMethodField()
 
     class Meta:
         model = UserTestCase
-        fields = ["id", "test_case", "progress"]
+        fields = ["user_test_case_id","id", "test_case", "progress"]
 
 
     def get_progress(self, obj):
@@ -474,3 +527,87 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ["project_id", "project_name", "project_description", "created_by", "project_lead", "deadline", "status", "progress", "project_team", "modules"]
+
+
+
+# UserTeststep serializer
+class UserTestStepResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserTestStepResult
+        fields = ["id","status", "remarks"]
+
+    def validate(self, data):
+
+        if data.get("status") not in ["pass", "fail"] and not data.get("marks"):
+            raise serializers.ValidationError({"remarks": "Remarks are required when marking a step as pass or fail"})
+        return data
+
+    def update(self, instance, validated_data):
+        instance.status = validated_data.get("status", instance.status)
+        instance.remarks = validated_data.get("remarks", instance.remarks)
+        instance.save()
+
+        # Update UserTestCase status based on test step results
+        user_test_case = instance.user_test_case
+        
+        if user_test_case.status == UserTestCaseStatus.TODO:
+            user_test_case.status = UserTestCaseStatus.IN_PROGRESS
+            user_test_case.save()
+        
+        
+        # If all steps are passed, mark as completed
+        all_steps = user_test_case.user_test_step_results.all()
+        if all_steps.exclude(status__in=["pass", "fail"]).count() == 0:  # No remaining "not_run" steps
+            user_test_case.status = UserTestCaseStatus.COMPLETED
+            user_test_case.save()
+
+        return instance
+
+
+from .models import Attachment, Bug, TestCaseResult
+
+# A brief serializer for users to return full name and id.
+class UserBriefSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ["id", "full_name"]
+
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip()
+    
+
+
+class AttachmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attachment
+        fields = ["id", "file", "uploaded_at"]
+
+
+
+
+class TestCaseResultBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TestCaseResult
+        fields = ["id", "result", "remarks", "execution_date"]
+
+
+class BugSerializer(serializers.ModelSerializer):
+    reported_by = UserBriefSerializer(read_only=True)
+    assigned_to = UserBriefSerializer(read_only=True)
+    attachments = AttachmentSerializer(many=True, read_only=True)
+    test_case_result = TestCaseResultBriefSerializer(read_only=True)
+
+    class Meta:
+        model = Bug
+        fields = ["id", "bug_id", "title", "description","priority", "status", "created_at", "severity","steps_to_reproduce", "environment", "reported_by", "assigned_to", "attachments", "test_case_result"]
+
+
+
+
+#Admin dashboard project management
+class ProjectBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ['project_id', 'project_name', 'project_description','id']

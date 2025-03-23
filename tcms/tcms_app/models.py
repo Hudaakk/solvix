@@ -259,6 +259,7 @@ class TestCasePriority(models.TextChoices):
 
 class TestCaseStatus(models.TextChoices):
     ASSIGNED = "assigned", "Assigned"
+    FAILED = "failed", "Failed"
     COMPLETED = "completed", "Completed"
 
     
@@ -283,19 +284,31 @@ class TestCase(models.Model):
     
 
     def get_progress(self):
-
         assigned_users = self.assigned_users.all()  # Related to UserTestCase
         total_users = assigned_users.count()
+
         if total_users == 0:
             return 0    
-        
+
         completed_users = assigned_users.filter(status=UserTestCaseStatus.COMPLETED).count()
         progress = int((completed_users / total_users) * 100)
-        if completed_users == total_users and total_users > 0:
-            self.status = TestCaseStatus.COMPLETED
-            self.save()
 
+        if completed_users == total_users and total_users > 0:
+        # Check if all test executions passed
+            all_passed = all(
+                utc.test_results.last().result == "passed"  # Using the latest test result
+                for utc in assigned_users
+                if utc.test_results.exists()
+            )
+            if all_passed:
+                self.status = TestCaseStatus.COMPLETED  # Mark as completed only if all passed
+            else:
+                self.status = TestCaseStatus.FAILED  # Mark as failed if any test failed
+            self.save()
+    
         return progress
+
+
 
 
     def get_due_date(self):
@@ -320,11 +333,7 @@ class TestStep(models.Model):
     step_number = models.PositiveIntegerField()
     step_description = models.TextField()
     expected_result = models.TextField()
-    status = models.CharField(
-        max_length= 10,
-        choices=[("pass", "Pass"), ("fail", "Fail"), ("not_run", "Not Run")],
-        default="not_run"
-    )
+    
 
     class Meta:
         ordering = ["step_number"]
@@ -352,6 +361,26 @@ class UserTestCase(models.Model):
     def __str__(self):
         return f"{self.test_case.test_title} -> {self.assigned_to.user.username}"
 
+
+# user test step result
+class UserTestStepResult(models.Model):
+    user_test_case = models.ForeignKey(UserTestCase, on_delete=models.CASCADE, related_name="user_test_step_results")
+    test_step = models.ForeignKey(TestStep, on_delete=models.CASCADE, related_name="user_results")
+    status = models.CharField(
+        max_length=10,
+        choices=[("pass", "Pass"), ("fail", "Fail"), ("not_run", "Not Run")],
+        default="not_run"
+    )
+    execution_date = models.DateTimeField(auto_now_add=True)
+    remarks = models.TextField(blank=True, null=True)
+
+
+    def __str__(self):
+        return f"{self.user_test_case.assigned_to.user.username} -> Step {self.test_step.step_number} -> {self.status}"
+
+
+
+
 # task comment
 
 class TaskComment(models.Model):
@@ -374,7 +403,7 @@ class TestComment(models.Model):
 
 class TestCaseResult(models.Model):
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name="test_results")
-    executed_by = models.ForeignKey(ProjectTeam, on_delete=models.CASCADE, related_name="executed_test_cases")
+    executed_by = models.ForeignKey(UserTestCase, on_delete=models.CASCADE, related_name="test_results")
     result = models.CharField(max_length=20, choices=[("passed", "Passed"), ("failed", "Failed")], default="passed")
     execution_date = models.DateTimeField(auto_now_add=True)
     remarks = models.TextField(blank=True, null=True)
@@ -386,12 +415,21 @@ class TestCaseResult(models.Model):
     
 class Bug(models.Model):
     bug_id = models.CharField(max_length=20, unique=True)
-    test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name="bugs")
+    test_case_result = models.ForeignKey(TestCaseResult, on_delete=models.CASCADE, related_name="bugs")
     reported_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="reported_bugs")
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_bugs")
     title = models.CharField(max_length=255)
     description = models.TextField()
+    steps_to_reproduce = models.TextField(null=True, blank=True)
+    environment = models.CharField(max_length=255, null=True, blank=True)  #e.g., browser, OS, app version)
     priority = models.CharField(max_length=10, choices=TestCasePriority.choices, default=TestCasePriority.MEDIUM)
+    severity = models.CharField(max_length=10, choices=[
+        ("critical", "Critical"), 
+        ("major", "Major"), 
+        ("minor", "Minor"), 
+        ("trivial", "Trivial")
+    ], default="minor")
+
     status = models.CharField(max_length=20, choices=[("open", "Open"), ("in_progress", "In Progress"), ("resolved", "Resolved"), ("closed", "Closed")], default="open")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -411,3 +449,5 @@ class Attachment(models.Model):
 
     def __str__(self):
         return f"Attachment {self.id} - {self.file.name}"
+    
+

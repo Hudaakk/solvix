@@ -825,7 +825,7 @@ class ProjectCompletedModuleView(ListAPIView):
 
 
 from .serializers import TestTypeSerializer, TestCaseSerializer, TestEngineersSerializer, AssignedTestCaseSerializer, UserTestCaseSerializer
-from.models import TestType, TestCase, TestComment, UserTestCase, TaskStatus, UserTestCaseStatus, TestStep
+from.models import TestType, TestCase, TestComment, UserTestCase, TaskStatus, UserTestCaseStatus, TestStep, UserTestStepResult
 from datetime import date
 
 
@@ -866,41 +866,54 @@ class ModuleTestCaseView(ListCreateAPIView):
         module_id = self.kwargs["module_id"]
         return TestCase.objects.filter(module_id=module_id).order_by("-priority")
     
+
     def create(self, request, *args, **kwargs):
         user = self.request.user
 
         if not user.role or user.role.role_name.lower() != "qa":
             raise PermissionDenied("Permission Denied")
-        
+
         module_id = kwargs['module_id']
         module = get_object_or_404(Module, id = module_id)
 
-        serializer = self.get_serializer(data=request.data, context={"module": module})
+        serializer = self.get_serializer(data=request.data, context={"module": module}) 
         print("request data:", request.data)
 
         if serializer.is_valid():
-            testcase = serializer.save(module = module, created_by = request.user)
+            testcase = serializer.save(module=module, created_by=request.user)
 
-            assigned_user_ids = request.data.get("assigned_users", [])  
-
-             # Assign test case to project team members
+            assigned_user_ids = request.data.get("assigned_users", []) 
+            user_test_cases = []
             for user_id in assigned_user_ids:
                 project_team_member = ProjectTeam.objects.filter(user_id=user_id, project=module.project).first()
 
                 if project_team_member:
-                    UserTestCase.objects.create(test_case=testcase, assigned_to=project_team_member)
-        
+                    user_test_case = UserTestCase.objects.create(test_case=testcase, assigned_to=project_team_member)
+                    user_test_cases.append(user_test_case)
+
             # Handle Test Steps (Create Test Steps if provided)
+            test_steps = []  # Store created test steps
             test_steps_data = request.data.get("test_steps", [])
             for step in test_steps_data:
-                TestStep.objects.create(
+                test_step = TestStep.objects.create(
                     test_case=testcase,
                     step_number=step["step_number"],
                     step_description=step["step_description"],
                     expected_result=step["expected_result"]
                 )
-                
+                test_steps.append(test_step)
+
+            # create user test step result
+            for user_test_case in user_test_cases:
+                for test_step in test_steps:
+                    UserTestStepResult.objects.create(
+                        user_test_case=user_test_case,
+                        test_step=test_step,
+                        status="not_run"  # Default status
+                    )
+
             # Comment creation
+
             comment_content = request.data.get("comment", "").strip()
             if comment_content:
                 TestComment.objects.create(user=request.user, test=testcase, content=comment_content)
@@ -912,11 +925,10 @@ class ModuleTestCaseView(ListCreateAPIView):
                     user=user,
                     message=f"A new test case '{testcase.test_title}' has been created in module '{module.module_name}'."
                 )
-            
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 
@@ -1077,7 +1089,7 @@ class RecentTestEngineerActivities(ListAPIView):
 # TE upcoming events
 
 class TestEngineerUpcomingDueView(ListAPIView):
-    
+
 
     serializer_class = AssignedTestCaseSerializer
     permission_classes = [IsAuthenticated]
@@ -1105,6 +1117,11 @@ class TestCaseDetailView(RetrieveAPIView):
     def get_object(self):
         test_case_id = self.kwargs.get("pk") 
         return get_object_or_404(TestCase, id = test_case_id)
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request  # Pass request into context
+        return context
     
     
 from rest_framework.generics import RetrieveUpdateAPIView
@@ -1172,3 +1189,315 @@ class TestUpdateView(RetrieveUpdateAPIView):
 
             return Response(self.get_serializer(updated_test_case).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+from .serializers import UserTestStepResultSerializer, BugSerializer
+from .models import Bug, Attachment, TestCaseResult
+
+# test case step status update
+
+class UpdateTestStepStatus(APIView):
+    def patch(self, request, step_id):
+        try:
+            test_step = UserTestStepResult.objects.get(id=step_id)
+            print("test step:", test_step)
+        except UserTestStepResult.DoesNotExist:
+            return Response({"error": "Test step not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = UserTestStepResultSerializer(test_step, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+from django.utils import timezone
+from .models import TestCaseStatus
+ 
+
+class CompleteTestCaseResultView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_test_case_id):
+        user_test_case = get_object_or_404(UserTestCase, id=user_test_case_id)
+
+        # Ensure all test steps are executed.
+        user_steps = user_test_case.user_test_step_results.all()
+        if user_steps.filter(status="not_run").exists():
+            return Response(
+                {"error": "Not all test steps have been executed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        overall_result = "passed" if all(step.status == "pass" for step in user_steps) else "failed"
+        remarks = request.data.get("remarks", "")
+
+        # Create the TestCaseResult record.
+        test_case_result = TestCaseResult.objects.create(
+            test_case=user_test_case.test_case,
+            executed_by=user_test_case,
+            result=overall_result,
+            remarks=remarks,
+            execution_date=timezone.now()
+        )
+
+        bug = None
+
+        # Always use "attachment" from the request.
+        attachment_file = request.FILES.get("attachment")
+        print("Attachment file: ", attachment_file)
+
+        if overall_result == "passed":
+            if attachment_file:
+                Attachment.objects.create(
+                    file=attachment_file,
+                    test_case_result=test_case_result
+                )
+        else:
+            # For failed test cases, process bug details.
+            bug_data = request.data.get("bug")
+            if not bug_data:
+                return Response(
+                    {"error": "Bug details are required for a failed test case."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Parse bug data if it's a JSON string.
+            if isinstance(bug_data, str):
+                import json
+                try:
+                    bug_data = json.loads(bug_data)
+                except Exception as e:
+                    return Response(
+                        {"error": "Invalid bug data format."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Determine bug_id.
+            if bug_data.get("bug_id"):
+                bug_id = bug_data.get("bug_id")
+                if Bug.objects.filter(bug_id=bug_id).exists():
+                    return Response(
+                        {"error": f"Bug id '{bug_id}' already exists."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            else:
+                bug_id = f"BUG{test_case_result.id}"
+
+            bug_title = bug_data.get("title")
+            bug_description = bug_data.get("description")
+            bug_priority = bug_data.get("priority", "Medium")
+            bug_severity = bug_data.get("severity", "minor")
+
+            # New fields from bug data:
+            steps_to_reproduce = bug_data.get("steps_to_reproduce")
+            environment = bug_data.get("environment")
+
+            if not bug_title or not bug_description:
+                return Response(
+                    {"error": "Bug title and description are required."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            bug = Bug.objects.create(
+                bug_id=bug_id,
+                test_case_result=test_case_result,
+                reported_by=request.user,
+                title=bug_title,
+                description=bug_description,
+                priority=bug_priority,
+                severity=bug_severity,
+                steps_to_reproduce=steps_to_reproduce,  # New field saved
+                environment=environment,                # New field saved
+                created_at=timezone.now()
+            )
+
+            if attachment_file:
+                # Rewind file pointer before using it for the bug attachment.
+                attachment_file.seek(0)
+                Attachment.objects.create(
+                    file=attachment_file,
+                    test_case_result=test_case_result,
+                    bug=bug
+                )
+
+        # Mark the UserTestCase as COMPLETED.
+        user_test_case.status = UserTestCaseStatus.COMPLETED
+        user_test_case.save()
+
+        # Update the TestCase status based on progress.
+        test_case = user_test_case.test_case
+        test_case.get_progress()  # This will update the status
+
+        # Prepare the response data.
+        data = {
+            "test_case_result": {
+                "id": test_case_result.id,
+                "result": test_case_result.result,
+                "remarks": test_case_result.remarks,
+                "execution_date": test_case_result.execution_date,
+            },
+            "bug": None
+        }
+        if overall_result == "failed" and bug:
+            data["bug"] = {
+                "id": bug.id,
+                "bug_id": bug.bug_id,
+                "title": bug.title,
+                "description": bug.description,
+                "priority": bug.priority,
+                "severity": bug.severity,
+                "steps_to_reproduce": bug.steps_to_reproduce,  # Include in response
+                "environment": bug.environment,                # Include in response
+                "status": bug.status,
+                "created_at": bug.created_at,
+            }
+
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    
+
+
+# qa list failed testcase
+
+class FailedTestCaseByModuleView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TestCaseSerializer
+
+    def get_queryset(self):
+
+        module_id = self.kwargs.get("module_id")
+        module = get_object_or_404(Module, id = module_id)
+        return TestCase.objects.filter(module = module, status = TestCaseStatus.FAILED)
+    
+
+
+# qa list bugs in a test case
+
+class BugsByTestCaseView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BugSerializer
+
+    def get_queryset(self):
+
+        test_case_id = self.kwargs.get("test_case_id")
+        test_case = get_object_or_404(TestCase, id = test_case_id)
+        return Bug.objects.filter(test_case_result__test_case = test_case)
+    
+
+# qa bug detail view
+
+class BugDetailView(RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BugSerializer
+
+    def get_queryset(self):
+        return Bug.objects.all()
+    
+
+# list developer in a module QA
+
+class ModuleDeveloperView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DeveloperSerializer
+
+    def get_queryset(self):
+
+        module_id = self.kwargs.get("module_id")
+        module = get_object_or_404(Module, id = module_id)
+        return ProjectTeam.objects.filter(project=module.project, user__role__role_name__iexact="developer")
+
+
+class AssignBugView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        bug = get_object_or_404(Bug, pk=pk)
+        developer_id = request.data.get("assigned_to")
+        if not developer_id:
+            return Response(
+                {"error": "Developer id (assigned_to) is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        developer = get_object_or_404(User, id=developer_id)
+        bug.assigned_to = developer
+        bug.save()
+        serializer = BugSerializer(bug, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# qa dashboard test status
+class QATestCaseStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Filter test cases created by the current QA user.
+        qs = TestCase.objects.filter(created_by=request.user)
+        total = qs.count()
+        assigned = qs.filter(status=TestCaseStatus.ASSIGNED).count()
+        completed = qs.filter(status=TestCaseStatus.COMPLETED).count()
+        failed = qs.filter(status=TestCaseStatus.FAILED).count()
+
+        data = {
+            "total": total,
+            "assigned": assigned,
+            "completed": completed,
+            "failed": failed,
+        }
+        return Response(data)
+    
+
+# QA dashboard recent activities
+
+class RecentTestCaseActivityView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TestCaseSerializer
+
+    def get_queryset(self):
+        return TestCase.objects.filter(created_by=self.request.user).order_by('-updated_at')
+    
+
+#QA dashboard upcoming events
+class UpcomingTestCaseDeadlinesView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TestCaseSerializer
+
+    def get_queryset(self):
+        today = timezone.now().date()
+        # Filter test cases created by the current user with due dates in the future (or today)
+        return TestCase.objects.filter(created_by=self.request.user, due_date__gte=today).order_by('due_date')
+    
+
+# Admin dashboard project status
+
+class AdminProjectStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        total_projects = Project.objects.count()
+        pending_projects = Project.objects.filter(status=ProjectStatus.PENDING).count()
+        in_progress_projects = Project.objects.filter(status=ProjectStatus.IN_PROGRESS).count()
+        completed_projects = Project.objects.filter(status=ProjectStatus.COMPLETED).count()
+        archived_projects = Project.objects.filter(status=ProjectStatus.ARCHIVED).count()
+
+        data = {
+            "total_projects": total_projects,
+            "pending_projects": pending_projects,
+            "in_progress_projects": in_progress_projects,
+            "completed_projects": completed_projects,
+            "archived_projects": archived_projects,
+        }
+        return Response(data)
+
+
+from .serializers import ProjectBasicSerializer
+
+#admin dashboard project management
+class RecentProjectsView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ProjectBasicSerializer
+
+    def get_queryset(self):
+        # Order by created_at descending so that the first project is the most recently added.
+        return Project.objects.all().order_by('-created_at')
