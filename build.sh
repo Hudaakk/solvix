@@ -6,7 +6,7 @@ set -o errexit
 pip install -r requirements.txt
 
 # Navigate to the directory containing manage.py
-cd tcms # Replace "myproject" with the actual directory name
+cd tcms
 
 # Apply migrations
 python manage.py collectstatic --no-input
