@@ -1585,9 +1585,9 @@ class TaskCommentCreateView(CreateAPIView):
 
 #add test comments
 
-class TaskCommentCreateView(CreateAPIView):
+class TestCommentCreateView(CreateAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = TaskCommentSerializer
+    serializer_class = TestCommentSerializer
 
     def perform_create(self, serializer):
         # Automatically set the user from the request.
