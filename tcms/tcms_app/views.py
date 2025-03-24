@@ -1599,6 +1599,6 @@ class ProjectTeamDetailView(RetrieveAPIView):
     serializer_class = ProjectTeamDetailsSerializer
 
     def get_object(self):
-        # Retrieve the project using the unique project_id passed in the URL.
-        project_id = self.kwargs.get("project_id")
-        return get_object_or_404(Project, project_id=project_id)
+    # Retrieve the project using the primary key from the URL.
+        project_pk = self.kwargs.get("project_id")
+        return get_object_or_404(Project, id=project_pk)
