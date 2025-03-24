@@ -126,7 +126,7 @@ class ForgotPasswordAPIView(APIView):
         # Build the password reset URL
         # reset_url = f"{request.build_absolute_uri('/api/reset-password/')}?uid={uidb64}&token={token}"
 
-        frontend_url = "http://192.168.251.86:5173"
+        frontend_url = "http://192.168.254.163:5173"
         reset_url = f"{frontend_url}/reset-password/{uidb64}/{token}"
 
         # Prepare the email content
