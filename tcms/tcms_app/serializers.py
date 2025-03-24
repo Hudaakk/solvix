@@ -636,3 +636,36 @@ class UserWithProjectsSerializer(serializers.ModelSerializer):
 
         # Return a list of dictionaries with the project id and name.
         return [{"project_id": p.project_id, "project_name": p.project_name} for p in all_projects]
+    
+
+# project team list
+class ProjectTeamDetailsSerializer(serializers.ModelSerializer):
+    project_lead = serializers.SerializerMethodField()
+    team_members = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Project
+        fields = ['project_id', 'project_name', 'project_lead', 'team_members']
+    
+    def get_project_lead(self, obj):
+        # Return basic details of the project lead.
+        user = obj.project_lead
+        if user:
+            return {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email
+            }
+        return None
+    
+    def get_team_members(self, obj):
+        # Retrieve active team members from the related ProjectTeam
+        team_qs = obj.project_team.filter(status="active")
+        return [
+            {
+                "id": pt.user.id,
+                "username": pt.user.username,
+                "email": pt.user.email
+            }
+            for pt in team_qs
+        ]
