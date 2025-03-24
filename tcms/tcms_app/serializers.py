@@ -653,7 +653,7 @@ class ProjectTeamDetailsSerializer(serializers.ModelSerializer):
         if user:
             return {
                 "id": user.id,
-                "username": user.username,
+                "full_name": f"{user.first_name} {user.last_name}".strip(),
                 "email": user.email
             }
         return None
