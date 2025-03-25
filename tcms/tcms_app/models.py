@@ -130,6 +130,8 @@ class Project(models.Model):
 
         combined_progress = (module_progress + test_progress) / 2
         return round(combined_progress, 2)
+    
+    
 #Project Team
 
 class ProjectTeam(models.Model):
@@ -430,6 +432,7 @@ class TestCaseResult(models.Model):
     def __str__(self):
         return f"{self.test_case.title} -> {self.result}"
     
+
 # bug
     
 class Bug(models.Model):
