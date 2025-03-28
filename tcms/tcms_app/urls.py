@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, upcoming_deadlines, QAProjectListView, AssignedTestCaseListView, ProjectDetailView, TrackAssignedTestCaseListView, TestCaseSummaryView, RecentTestEngineerActivities, TestEngineerUpcomingDueView, TestCaseDetailView, TestUpdateView, UpdateTestStepStatus,CompleteTestCaseResultView, FailedTestCaseByModuleView, BugsByTestCaseView,BugDetailView, ModuleDeveloperView, AssignBugView, QATestCaseStatsView, RecentTestCaseActivityView, UpcomingTestCaseDeadlinesView, AdminProjectStatsView, RecentProjectsView, UpdateProjectView, UserStatusView, UsersWithProjectsListView, TaskCommentCreateView, TestCommentCreateView, ProjectTeamDetailView
+from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, upcoming_deadlines, QAProjectListView, AssignedTestCaseListView, ProjectDetailView, TrackAssignedTestCaseListView, TestCaseSummaryView, RecentTestEngineerActivities, TestEngineerUpcomingDueView, TestCaseDetailView, TestUpdateView, UpdateTestStepStatus,CompleteTestCaseResultView, FailedTestCaseByModuleView, BugsByTestCaseView,BugDetailView, ModuleDeveloperView, AssignBugView, QATestCaseStatsView, RecentTestCaseActivityView, UpcomingTestCaseDeadlinesView, AdminProjectStatsView, RecentProjectsView, UpdateProjectView, UserStatusView, UsersWithProjectsListView, TaskCommentCreateView, TestCommentCreateView, ReportBugOnTestCaseView, ProjectSummaryView, AdminProjectDetailView, AdminReportUserView, AdminuserDetailView, ModuleBugListView, ProjectManagerGraphView, ProjectStatsView, remove_profile_picture
 
 from rest_framework_simplejwt.views import TokenRefreshView, TokenObtainPairView
 
@@ -125,7 +125,6 @@ urlpatterns = [
      
     path('admin/project-stats/', AdminProjectStatsView.as_view(), name='admin-project-stats'),
 
-
     path('admin/recent-projects/', RecentProjectsView.as_view(), name='recent-projects'),
 
     path('admin/user-stats/', UserStatusView.as_view(), name='admin-user-stats'),
@@ -136,27 +135,26 @@ urlpatterns = [
 
     path('tests/<int:test_id>/comments/', TestCommentCreateView.as_view(), name='create-test-comment'),
 
-    path('projects/<int:project_id>/team/', ProjectTeamDetailView.as_view(), name='project-team-detail'),
+    # path('projects/<int:project_id>/team/', ProjectTeamDetailView.as_view(), name='project-team-detail'),
 
+    path('qa-report-bug/<int:test_case_id>/', ReportBugOnTestCaseView.as_view(), name = 'report-bug'),
 
+    path('project-summary/<int:project_id>/', ProjectSummaryView.as_view(), name='project-summary'),
 
+    path('admin/project-detail/<int:project_id>/', AdminProjectDetailView.as_view(), name='project-detail'),
 
+    path('admin/uesrReport/<int:user_id>/', AdminReportUserView.as_view(), name='user-report'),
 
+    path('admin/user-detail/<int:user_id>/', AdminuserDetailView.as_view(), name='admin-user-detail'),
 
+    path('modules/<int:module_id>/bugs/', ModuleBugListView.as_view(), name='module-bug-list'),
 
+    path('pm-projects-graph/', ProjectManagerGraphView.as_view(), name= 'my-projects-graph'),
 
+    path('projects/<int:project_id>/stats/', ProjectStatsView.as_view(), name='project-stats'),
 
-
-
-
-
-
-
-
+    path('remove-profile-picture/', remove_profile_picture, name='remove-profile-picture'),
     
-    
-
-
 
 
     

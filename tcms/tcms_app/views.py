@@ -379,6 +379,7 @@ class EditUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def put(self, request, user_id):
+        print("request:", request.data)
         if not request.user.role or request.user.role.role_name.lower() != "admin":
             return Response({"error": "Permission denied"}, status=status.HTTP_403_FORBIDDEN)
         
@@ -431,6 +432,27 @@ class AddProfilePictureView(APIView):
             serializer.save()
             return Response({'message': 'profile picture updated successfully', 'data': serializer.data}, status = status.HTTP_200_OK)
         return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+
+
+    
+from rest_framework.decorators import api_view, permission_classes
+
+#Remove profile pics
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def remove_profile_picture(request):
+    user = request.user  # Get logged-in user
+    
+    if user.profile_picture:  
+        user.profile_picture.delete(save=False)  # Delete the file from storage
+        user.profile_picture = None
+        user.save()
+        return Response({"message": "Profile picture removed successfully."}, status=status.HTTP_200_OK)
+    
+    return Response({"error": "No profile picture to remove."}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 from .serializers import  ProjectListSerializer, ModuleSerializer, ProjectSerializer, LeadProjectListSerializer, TaskSerializer, DeveloperSerializer, NotificationSerializer
@@ -1156,8 +1178,11 @@ class TestCaseDetailView(RetrieveAPIView):
         context['request'] = self.request  # Pass request into context
         return context
     
+
     
 from rest_framework.generics import RetrieveUpdateAPIView
+
+
 
 # edit test case
 class TestUpdateView(RetrieveUpdateAPIView):
@@ -1224,8 +1249,11 @@ class TestUpdateView(RetrieveUpdateAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 from .serializers import UserTestStepResultSerializer, BugSerializer
 from .models import Bug, Attachment, TestCaseResult
+
+
 
 # test case step status update
 
@@ -1249,6 +1277,9 @@ from django.utils import timezone
 from .models import TestCaseStatus
  
 
+
+#mark complete or report bug by test engineer
+
 class CompleteTestCaseResultView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1266,10 +1297,10 @@ class CompleteTestCaseResultView(APIView):
         overall_result = "passed" if all(step.status == "pass" for step in user_steps) else "failed"
         remarks = request.data.get("remarks", "")
 
-        # Create the TestCaseResult record.
+        # Create the TestCaseResult record using request.user for executed_by.
         test_case_result = TestCaseResult.objects.create(
             test_case=user_test_case.test_case,
-            executed_by=user_test_case,
+            executed_by=request.user,  
             result=overall_result,
             remarks=remarks,
             execution_date=timezone.now()
@@ -1381,8 +1412,8 @@ class CompleteTestCaseResultView(APIView):
                 "description": bug.description,
                 "priority": bug.priority,
                 "severity": bug.severity,
-                "steps_to_reproduce": bug.steps_to_reproduce,  # Include in response
-                "environment": bug.environment,                # Include in response
+                "steps_to_reproduce": bug.steps_to_reproduce,
+                "environment": bug.environment,
                 "status": bug.status,
                 "created_at": bug.created_at,
             }
@@ -1427,7 +1458,118 @@ class BugDetailView(RetrieveAPIView):
 
     def get_queryset(self):
         return Bug.objects.all()
-    
+
+
+
+import json
+
+
+#report bug by QA
+class ReportBugOnTestCaseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, test_case_id):
+        user = request.user
+
+        if not user.role or user.role.role_name.lower() != "qa":
+            return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
+        
+        test_case = get_object_or_404(TestCase, id = test_case_id)
+        print('request data',request.data)
+
+        #create a TestCaseResult with
+        remarks = request.data.get("remarks", "")
+        test_case_result = TestCaseResult.objects.create(
+            test_case = test_case,
+            executed_by = request.user,
+            result = "failed",
+            remarks = remarks,
+            execution_date = timezone.now()
+        )
+
+        # Extract bug details from the request.
+        bug_data = request.data.get("bug")
+        if not bug_data:
+            return Response({"error":"Bug details are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+        #parse bug dataif its a Json string.
+        if isinstance(bug_data, str):
+            try:
+                bug_data = json.loads(bug_data)
+            except Exception as e:
+                return Response({"error":"Invalid bug data format."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Determine a unique bug_id.
+        if bug_data.get("bug_id"):
+            bug_id = bug_data.get("bug_id")
+            if Bug.objects.filter(bug_id=bug_id).exists():
+                return Response({"error": f"Bug id '{bug_id}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            bug_id = f"BUG{test_case_result.id}"
+
+        # Extract required fields.
+        bug_title = bug_data.get("title")
+        bug_description = bug_data.get("description")
+        bug_priority = bug_data.get("priority", "Medium")
+        bug_severity = bug_data.get("severity", "minor")
+        steps_to_reproduce = bug_data.get("steps_to_reproduce")
+        environment = bug_data.get("environment")
+
+        if not bug_title or not bug_description:
+            return Response({"error": "Bug title and description are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create the Bug record linked to the TestCaseResult.
+        bug = Bug.objects.create(
+            bug_id=bug_id,
+            test_case_result=test_case_result,
+            reported_by=request.user,
+            title=bug_title,
+            description=bug_description,
+            priority=bug_priority,
+            severity=bug_severity,
+            steps_to_reproduce=steps_to_reproduce,
+            environment=environment,
+            created_at=timezone.now()
+        )
+
+        # Process an optional attachment file.
+        attachment_file = request.FILES.get("attachment")
+        if attachment_file:
+            attachment_file.seek(0)
+            Attachment.objects.create(
+                file=attachment_file,
+                test_case_result=test_case_result,
+                bug=bug
+            )
+
+        # Prepare the response data.
+        data = {
+            "test_case_result": {
+                "id": test_case_result.id,
+                "result": test_case_result.result,
+                "remarks": test_case_result.remarks,
+                "execution_date": test_case_result.execution_date,
+            },
+            "bug": {
+                "id": bug.id,
+                "bug_id": bug.bug_id,
+                "title": bug.title,
+                "description": bug.description,
+                "priority": bug.priority,
+                "severity": bug.severity,
+                "steps_to_reproduce": bug.steps_to_reproduce,
+                "environment": bug.environment,
+                "status": bug.status,
+                "created_at": bug.created_at,
+            }
+        }
+        return Response(data, status=status.HTTP_201_CREATED)
+
+
+
+
+
 
 # list developer in a module QA
 
@@ -1524,20 +1666,22 @@ class AdminProjectStatsView(APIView):
         return Response(data)
 
 
-from .serializers import ProjectBasicSerializer, UserWithProjectsSerializer, TaskCommentSerializer, TestCommentSerializer, ProjectTeamDetailsSerializer
+from .serializers import ProjectBasicSerializer, UserWithProjectsSerializer, TaskCommentSerializer, TestCommentSerializer
 from django.db.models import Q
 
 
 #admin dashboard project management
 class RecentProjectsView(ListAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = ProjectBasicSerializer
+    serializer_class = ProjectListSerializer
 
     def get_queryset(self):
         # Order by created_at descending so that the first project is the most recently added.
         return Project.objects.all().order_by('-created_at')
     
 
+    
+# active and inactive users
 class UserStatusView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1559,6 +1703,7 @@ class UserStatusView(APIView):
         })
     
 
+
 #admin dashboard
 class UsersWithProjectsListView(ListAPIView):
     permission_classes = [IsAuthenticated]
@@ -1572,6 +1717,8 @@ class UsersWithProjectsListView(ListAPIView):
             Q(user_project_team__isnull=False)
         ).distinct()
     
+
+
 #Add task comments
 
 class TaskCommentCreateView(CreateAPIView):
@@ -1581,6 +1728,7 @@ class TaskCommentCreateView(CreateAPIView):
     def perform_create(self, serializer):
         # Automatically set the user from the request.
         serializer.save(user=self.request.user)
+
 
 
 #add test comments
@@ -1594,11 +1742,455 @@ class TestCommentCreateView(CreateAPIView):
         serializer.save(user=self.request.user)
 
 
-class ProjectTeamDetailView(RetrieveAPIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = ProjectTeamDetailsSerializer
+  
 
-    def get_object(self):
-    # Retrieve the project using the primary key from the URL.
-        project_pk = self.kwargs.get("project_id")
-        return get_object_or_404(Project, id=project_pk)
+
+#project details(aggregated information)
+
+class ProjectSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+
+        project = get_object_or_404(Project, id=project_id)
+
+        total_modules = project.modules.count()
+        total_tasks = Task.objects.filter(module__project = project).count()
+        total_test_cases = TestCase.objects.filter(module__project = project).count()
+        total_bugs = Bug.objects.filter(test_case_result__test_case__module__project = project).count()
+        progress = project.progress
+
+        data = {
+            "project_id": project.id,
+            "project_name":project.project_name,
+            "total_modules":total_modules,
+            "total_tasks":total_tasks,
+            "total_test_cases":total_test_cases,
+            "total_bugs":total_bugs,
+            "progress":progress
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+
+import datetime
+
+#admin dashboard project view details
+class AdminProjectDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = get_object_or_404(Project, id=project_id)
+
+        team_members = project.project_team.all()
+        team_data = []
+        for members in team_members:
+            full_name = (members.user.first_name + " " + members.user.last_name).strip()
+            if not full_name:
+                full_name = members.user.username
+            team_data.append({
+                "full_name":full_name,
+                "role":members.user.role.role_name
+            })
+
+
+        #Module details
+        modules = project.modules.all()
+        module_data = []
+        for mod in modules:
+            module_data.append({
+                "Module_id": mod.Module_id,
+                "module_name": mod.module_name,
+                "module_description": mod.module_description,
+                "due_date": mod.due_date,
+                "priority": mod.priority,
+                "status": mod.status,
+                "progress": mod.progress  # using the property defined in Module
+            })
+
+        # get tasks associated with this project
+
+        tasks_qs = Task.objects.filter(module__project = project)
+        total_tasks = tasks_qs.count()
+        completed_tasks = tasks_qs.filter(status = TaskStatus.COMPLETED).count()
+        pending_tasks = total_tasks - completed_tasks
+
+
+        # Get bugs associated with this project.
+        
+        bugs_qs = Bug.objects.filter(test_case_result__test_case__module__project=project)
+        total_bugs = bugs_qs.count()
+        critical_bugs = bugs_qs.filter(severity="critical").count()
+        major_bugs = bugs_qs.filter(severity = "major").count()
+        minor_bugs = bugs_qs.filter(severity="minor").count()
+        trivial_bugs = bugs_qs.filter(severity = "trivial").count()
+
+
+        # overall progress
+        overall_progress = project.progress
+
+        #weekly progress graph
+
+        weekly_data = []
+        now = timezone.now()
+
+        number_of_weeks = 4
+
+        for i in range(number_of_weeks, 0, -1):
+            week_end = now - datetime.timedelta(days=(i-1)*7)
+            week_start = now - datetime.timedelta(days=i*7)
+    
+            # Tasks progress for the week
+            tasks_week = tasks_qs.filter(created_at__gte=week_start, created_at__lt=week_end)
+            tasks_created = tasks_week.count()
+            tasks_completed = tasks_week.filter(status=TaskStatus.COMPLETED).count()
+            tasks_pending = tasks_created - tasks_completed
+            if tasks_created > 0:
+                tasks_progress = (tasks_completed / tasks_created) * 100
+            else:
+                tasks_progress = 0
+
+    
+            # Modules progress for the week
+            modules_week = project.modules.filter(created_at__gte=week_start, created_at__lt=week_end)
+            modules_created = modules_week.count()
+            modules_completed = modules_week.filter(status=ModuleStatus.COMPLETED).count()
+            modules_pending = modules_created - modules_completed
+            if modules_created > 0:
+                modules_progress = (modules_completed / modules_created) * 100
+            else:
+                modules_progress = 0
+    
+            # Test cases progress for the week
+            tests_week = TestCase.objects.filter(module__project=project, created_at__gte=week_start, created_at__lt=week_end)
+            tests_created = tests_week.count()
+            tests_completed_or_failed = tests_week.filter(status__in=[TestCaseStatus.COMPLETED, TestCaseStatus.FAILED]).count()
+            tests_pending = tests_created - tests_completed_or_failed
+            if tests_created > 0:
+                tests_progress = (tests_completed_or_failed / tests_created) * 100
+            else:
+                tests_progress = 0
+
+
+            # Combine the progress (simple average)
+            overall_week_progress = round((tasks_progress + modules_progress + tests_progress) / 3, 2)
+
+            weekly_data.append({
+                "week": f"Week {number_of_weeks + 1 - i}",
+                "progress": overall_week_progress,
+                "tasks_created": tasks_created,
+                "tasks_completed": tasks_completed,
+                "tasks_pending": tasks_pending,
+                "modules_created": modules_created,
+                "modules_completed": modules_completed,
+                "modules_pending": modules_pending,
+                "tests_created": tests_created,
+                "tests_completed_or_failed": tests_completed_or_failed,
+                "tests_pending": tests_pending,
+            })
+
+        # Prepare the detailed response data.
+        data = {
+            "project_id": project.id,
+            "project_name": project.project_name,
+            "project_description": project.project_description,
+            "project_lead": project.project_lead.get_full_name() if project.project_lead and (project.project_lead.first_name or project.project_lead.last_name) else project.project_lead.username if project.project_lead else None,
+            "overall_progress": overall_progress,
+            "team": team_data,
+            "modules": module_data,
+            "task_summary": {
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "pending_tasks": pending_tasks,
+            },
+            "bug_summary": {
+                "faults_identified": total_bugs,
+                "critical_bugs": critical_bugs,
+                "minor_bugs": minor_bugs,
+                "major_bugs": major_bugs,
+                "trivial_bugs": trivial_bugs
+            },
+            "weekly_progress": weekly_data
+        }
+        return Response(data, status=status.HTTP_200_OK)
+    
+
+
+#admin dashboard user details
+
+class AdminReportUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        # Retrieve the target user for whom we want the dashboard metrics.
+        target_user = get_object_or_404(User, id=user_id)
+        role = target_user.role.role_name.lower()
+        data = {}
+
+        if role == "developer":
+            projects_assigned = ProjectTeam.objects.filter(user=target_user, status="active")
+            total_projects = projects_assigned.count()
+
+            tasks_qs = Task.objects.filter(assigned_to__user=target_user)
+            total_tasks = tasks_qs.count()
+            completed_tasks = tasks_qs.filter(status=TaskStatus.COMPLETED).count()
+            pending_tasks = total_tasks - completed_tasks
+            efficiency = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+
+            data = {
+                "role": "developer",
+                "total_projects": total_projects,
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "pending_tasks": pending_tasks,
+                "efficiency": round(efficiency, 2),
+            }
+        elif role == "qa":
+            
+            total_created_tests = TestCase.objects.filter(created_by=target_user).count()
+            # Count test cases that have been assigned (i.e. have corresponding UserTestCase records)
+            total_assigned = UserTestCase.objects.filter(test_case__created_by=target_user).count()
+            # Among those, count how many are completed.
+            completed_tests = UserTestCase.objects.filter(test_case__created_by=target_user, status=UserTestCaseStatus.COMPLETED).count()
+            pending_tests = total_assigned - completed_tests
+
+            # Optionally, count bugs reported for test cases created by this QA.
+            bugs_reported = Bug.objects.filter(test_case_result__test_case__created_by=target_user).count()
+
+            # Define efficiency for a QA as the percentage of their test cases that reached a final outcome (completed or failed).
+            # We assume that if a test case is not assigned or not executed, it's not efficient.
+            finished_tests = UserTestCase.objects.filter(test_case__created_by=target_user, status__in=[UserTestCaseStatus.COMPLETED]).count()
+            efficiency = (finished_tests / total_created_tests) * 100 if total_created_tests > 0 else 0
+
+            data = {
+                "role": "qa",
+                "total_test_cases_created": total_created_tests,
+                "total_test_cases_assigned": total_assigned,
+                "completed_test_cases": completed_tests,
+                "pending_test_cases": pending_tests,
+                "bugs_reported": bugs_reported,
+                "efficiency": round(efficiency, 2),
+            }
+
+        elif role in ["test engineer"]:
+            user_test_cases = UserTestCase.objects.filter(assigned_to__user=target_user)
+            total_tests = user_test_cases.count()
+            completed_tests = user_test_cases.filter(status=UserTestCaseStatus.COMPLETED).count()
+            pending_tests = total_tests - completed_tests
+
+            failed_tests = 0
+            for utc in user_test_cases:
+                result = utc.test_result  # The property returns the latest TestCaseResult.
+                if result and result.result == "failed":
+                    failed_tests += 1
+            efficiency = (completed_tests / total_tests) * 100 if total_tests > 0 else 0
+
+            data = {
+                "role": "test engineer",
+                "total_tests": total_tests,
+                "completed_tests": completed_tests,
+                "pending_tests": pending_tests,
+                "failed_tests": failed_tests,
+                "efficiency": round(efficiency, 2),
+            }
+
+        elif role == "project manager":
+            # For project managers, count projects, modules, and tasks they created.
+            projects_created = Project.objects.filter(created_by=target_user)
+            total_projects = projects_created.count()
+            modules_created = Module.objects.filter(project__created_by=target_user).count()
+            tasks_created = Task.objects.filter(created_by=target_user)
+            total_tasks = tasks_created.count()
+            completed_tasks = tasks_created.filter(status=TaskStatus.COMPLETED).count()
+            pending_tasks = total_tasks - completed_tasks
+            efficiency = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+
+            data = {
+                "role": "project manager",
+                "total_projects": total_projects,
+                "modules_created": modules_created,
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "pending_tasks": pending_tasks,
+                "efficiency": round(efficiency, 2),
+            }
+
+        else:
+            data = {"error": "Role not supported for dashboard metrics."}
+
+        return Response(data, status=status.HTTP_200_OK)
+    
+
+
+#admin user detailed view
+
+class AdminuserDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        target_user = get_object_or_404(User, id = user_id)
+        role = target_user.role.role_name.lower()
+
+        user_details = {
+            "full_name":target_user.get_full_name() or target_user.username,
+            "email":target_user.email,
+            "role":role,
+            "specialization":target_user.specialization,
+            "status":target_user.status
+        }
+
+        #prepare monthly performance data for last 6 months.
+        monthly_data = []
+        now = timezone.now()
+        current_year = now.year
+        # Define how many months you want to show.
+        number_of_months = 6  
+        # Determine starting month (if current month < number_of_months, start at January)
+        start_month = max(1, now.month - number_of_months + 1)
+        for month in range(start_month, now.month + 1):
+            label = datetime.date(current_year, month, 1).strftime("%B %Y")
+            
+            if role == "developer":
+                qs = Task.objects.filter(
+                    assigned_to__user=target_user,
+                    created_at__year=current_year,
+                    created_at__month=month
+                )
+                total = qs.count()
+                completed = qs.filter(status=TaskStatus.COMPLETED).count()
+
+            elif role == "project manager":
+                qs = Task.objects.filter(
+                    created_by=target_user,
+                    created_at__year=current_year,
+                    created_at__month=month
+                )
+                total = qs.count()
+                completed = qs.filter(status=TaskStatus.COMPLETED).count()
+            
+            elif role == "qa":
+                qs = TestCase.objects.filter(
+                    created_by=target_user,
+                    created_at__year=current_year,
+                    created_at__month=month
+                )
+                total = qs.count()
+                finished = UserTestCase.objects.filter(
+                    test_case__created_by=target_user,
+                    created_at__year=current_year,
+                    created_at__month=month,
+                    status=UserTestCaseStatus.COMPLETED
+                ).count()
+                completed = finished
+
+            elif role == "test engineer":
+                qs = UserTestCase.objects.filter(
+                    assigned_to__user=target_user,
+                    assigned_at__year=current_year,
+                    assigned_at__month=month
+                )
+                total = qs.count()
+                completed = qs.filter(status=UserTestCaseStatus.COMPLETED).count()
+            else:
+                total = 0
+                completed = 0
+
+            efficiency = (completed / total) * 100 if total > 0 else 0
+            monthly_data.append({
+                "month": label,
+                "total": total,
+                "completed": completed,
+                "efficiency": round(efficiency, 2)
+            })
+        
+        data = {
+            "user_details": user_details,
+            "monthly_performance": monthly_data
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+# list bug by modules
+
+class ModuleBugListView(ListAPIView):
+    serializer_class = BugSerializer
+
+    def get_queryset(self):
+        module_id = self.kwargs.get('module_id')
+        module = get_object_or_404(Module, id=module_id)
+        return Bug.objects.filter(test_case_result__test_case__module = module)
+    
+
+
+#project manager report
+class ProjectManagerGraphView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ProjectBasicSerializer
+
+    def get_queryset(self):
+        return Project.objects.filter(
+            project_lead = self.request.user
+        ).exclude(
+            status=ProjectStatus.COMPLETED
+        )
+    
+
+#project manager report project status
+class ProjectStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+
+        project = get_object_or_404(Project, id=project_id)
+
+        # Tasks
+        tasks_qs = Task.objects.filter(module__project=project)
+        total_tasks = tasks_qs.count()
+        completed_tasks = tasks_qs.filter(status=TaskStatus.COMPLETED).count()
+        pending_tasks = total_tasks - completed_tasks
+
+        #Modules
+        modules_qs = project.modules.all()
+        total_modules = modules_qs.count()
+        completed_modules = modules_qs.filter(status=ModuleStatus.COMPLETED).count()
+        pending_modules = total_modules - completed_modules
+
+        # Test Cases
+        testcases_qs = TestCase.objects.filter(module__project=project)
+        total_testcases = testcases_qs.count()
+        completed_testcases = testcases_qs.filter(status=TestCaseStatus.COMPLETED).count()
+        failed_testcases = testcases_qs.filter(status= TestCaseStatus.FAILED).count()
+        pending_testcases = total_testcases - completed_testcases
+
+        # Bugs
+        bugs_qs = Bug.objects.filter(test_case_result__test_case__module__project=project)
+        total_bugs = bugs_qs.count()
+
+        # Prepare the response data
+        data = {
+            "project_id": project.id,
+            "project_name": project.project_name,
+            "project_status": project.status,
+            "overall_progress": project.progress,
+            "metrics": {
+                "tasks": {
+                    "total": total_tasks,
+                    "completed": completed_tasks,
+                    "pending": pending_tasks
+                },
+                "modules": {
+                    "total": total_modules,
+                    "completed": completed_modules,
+                    "pending": pending_modules
+                },
+                "test_cases": {
+                    "total": total_testcases,
+                    "completed": completed_testcases,
+                    "failed": failed_testcases,
+                    "pending": pending_testcases
+                },
+                "bugs": {
+                    "total": total_bugs
+                }
+            }
+        }
+        return Response(data, status=200)
+

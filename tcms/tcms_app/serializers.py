@@ -50,7 +50,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id','user_id', 'name', 'first_name', 'last_name', 'email', 'role','profile_picture', 'status', 'specialization']
+        fields = ['id','user_id', 'name', 'first_name', 'last_name', 'email', 'role','profile_picture', 'status', 'specialization','username']
 
 
     def get_name(self, obj):
@@ -62,8 +62,9 @@ class UserSerializer(serializers.ModelSerializer):
 class EditSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['user_id','first_name', 'last_name', 'email', 'role', 'status', "specialization"]
+        fields = ['user_id','first_name', 'last_name','role', 'status', "specialization"]
         extra_kwargs = {
+            'email':{'read_only':True},
             'username': {'read_only': True},
             'password': {'write_only':True, 'required': False},
             'profile_picture': {'read_only': True},
@@ -521,10 +522,11 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
     project_team = ProjectTeamSerializer(many=True, read_only=True)
     modules = ModuleSerializer(many=True, read_only=True)
     progress = serializers.ReadOnlyField()
+    project_lead = UserSerializer(read_only = True)
 
     class Meta:
         model = Project
-        fields = ["project_id", "project_name", "project_description", "created_by", "project_lead", "deadline", "status", "progress", "project_team", "modules"]
+        fields = ["project_id", "project_name", "project_description", "created_by", "project_lead", "deadline", "status", "progress", "project_team", "modules", "project_lead"]
 
 
 
@@ -606,11 +608,13 @@ class BugSerializer(serializers.ModelSerializer):
 
 #Admin dashboard project management
 class ProjectBasicSerializer(serializers.ModelSerializer):
+    progress = serializers.ReadOnlyField()
     class Meta:
         model = Project
-        fields = ['project_id', 'project_name', 'project_description','id']
+        fields = ['project_id', 'project_name', 'project_description','id', "progress"]
 
-    
+
+
 # user project serializer
 
 class UserWithProjectsSerializer(serializers.ModelSerializer):
@@ -638,34 +642,3 @@ class UserWithProjectsSerializer(serializers.ModelSerializer):
         return [{"project_id": p.project_id, "project_name": p.project_name} for p in all_projects]
     
 
-# project team list
-class ProjectTeamDetailsSerializer(serializers.ModelSerializer):
-    project_lead = serializers.SerializerMethodField()
-    team_members = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Project
-        fields = ['project_id', 'project_name', 'project_lead', 'team_members']
-    
-    def get_project_lead(self, obj):
-        # Return basic details of the project lead.
-        user = obj.project_lead
-        if user:
-            return {
-                "id": user.id,
-                "full_name": f"{user.first_name} {user.last_name}".strip(),
-                "email": user.email
-            }
-        return None
-    
-    def get_team_members(self, obj):
-        # Retrieve active team members from the related ProjectTeam
-        team_qs = obj.project_team.filter(status="active")
-        return [
-            {
-                "id": pt.user.id,
-                "username": pt.user.username,
-                "email": pt.user.email
-            }
-            for pt in team_qs
-        ]

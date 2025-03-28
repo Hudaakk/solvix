@@ -305,29 +305,28 @@ class TestCase(models.Model):
     
 
     def get_progress(self):
-        assigned_users = self.assigned_users.all()  # Related to UserTestCase
+        assigned_users = self.assigned_users.all()  # UserTestCase instances
         total_users = assigned_users.count()
-
         if total_users == 0:
-            return 0    
+            return 0
 
         completed_users = assigned_users.filter(status=UserTestCaseStatus.COMPLETED).count()
         progress = int((completed_users / total_users) * 100)
 
         if completed_users == total_users and total_users > 0:
-        # Check if all test executions passed
+        # Check if each assigned user has a TestCaseResult and if it passed.
             all_passed = all(
-                utc.test_results.last().result == "passed"  # Using the latest test result
+                utc.test_result is not None and utc.test_result.result == "passed"
                 for utc in assigned_users
-                if utc.test_results.exists()
             )
             if all_passed:
-                self.status = TestCaseStatus.COMPLETED  # Mark as completed only if all passed
+                self.status = TestCaseStatus.COMPLETED
             else:
-                self.status = TestCaseStatus.FAILED  # Mark as failed if any test failed
+                self.status = TestCaseStatus.FAILED
             self.save()
-    
+
         return progress
+
 
 
 
@@ -381,6 +380,14 @@ class UserTestCase(models.Model):
 
     def __str__(self):
         return f"{self.test_case.test_title} -> {self.assigned_to.user.username}"
+    
+    @property
+    def test_result(self):
+        return TestCaseResult.objects.filter(
+            test_case=self.test_case, 
+            executed_by=self.assigned_to.user
+        ).last()
+
 
 
 # user test step result
@@ -424,7 +431,7 @@ class TestComment(models.Model):
 
 class TestCaseResult(models.Model):
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name="test_results")
-    executed_by = models.ForeignKey(UserTestCase, on_delete=models.CASCADE, related_name="test_results")
+    executed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="test_results")
     result = models.CharField(max_length=20, choices=[("passed", "Passed"), ("failed", "Failed")], default="passed")
     execution_date = models.DateTimeField(auto_now_add=True)
     remarks = models.TextField(blank=True, null=True)
@@ -459,6 +466,7 @@ class Bug(models.Model):
         return f"{self.title} ({self.status})"
 
 
+
 #Attachment
 
 class Attachment(models.Model):
@@ -472,4 +480,5 @@ class Attachment(models.Model):
     def __str__(self):
         return f"Attachment {self.id} - {self.file.name}"
     
+
 
