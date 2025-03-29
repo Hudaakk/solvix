@@ -71,44 +71,37 @@ class Project(models.Model):
     status = models.CharField(max_length = 20, choices = ProjectStatus.choices, default = ProjectStatus.PENDING)
 
     def save(self, *args, **kwargs):
+    # If the project is already archived, do nothing except saving
+        if self.status == ProjectStatus.ARCHIVED:
+            super().save(*args, **kwargs)
+            return  
+
         if not self.project_lead:
             self.project_lead = self.created_by
 
         # Save first so that related objects (modules, etc.) are available
         super().save(*args, **kwargs)
 
-        # Update project status based on modules and test cases progress
+        # Update project status only if it is not archived
         module_qs = self.modules.all()
         total_modules = module_qs.count()
-        if total_modules:
-            completed_modules = module_qs.filter(status=ModuleStatus.COMPLETED).count()
-            module_progress = (completed_modules / total_modules) * 100
-        else:
-            module_progress = 0
+        module_progress = (module_qs.filter(status=ModuleStatus.COMPLETED).count() / total_modules) * 100 if total_modules else 0
 
         test_qs = TestCase.objects.filter(module__project=self)
         total_tests = test_qs.count()
-        if total_tests:
-            completed_tests = test_qs.filter(status=TestCaseStatus.COMPLETED).count()
-            test_progress = (completed_tests / total_tests) * 100
-        else:
-            test_progress = 0
+        test_progress = (test_qs.filter(status=TestCaseStatus.COMPLETED).count() / total_tests) * 100 if total_tests else 0
 
-        # Combined progress (you can adjust the weight as needed)
         combined_progress = (module_progress + test_progress) / 2
 
-        # Update status: Only mark project COMPLETED if combined progress is 100.
-        if combined_progress == 100:
-            self.status = ProjectStatus.COMPLETED
-        else:
-            # If not completed, we can mark it as IN_PROGRESS if there's any progress.
-            self.status = ProjectStatus.IN_PROGRESS if combined_progress > 0 else ProjectStatus.PENDING
+        # Only change status if it's not archived
+        if self.status != ProjectStatus.ARCHIVED:
+            if combined_progress == 100:
+                self.status = ProjectStatus.COMPLETED
+            else:
+                self.status = ProjectStatus.IN_PROGRESS if combined_progress > 0 else ProjectStatus.PENDING
 
         # Save again to update status.
         super().save(update_fields=['status', 'updated_at'])
-
-    def __str__(self):
-        return self.project_name
 
     @property
     def progress(self):

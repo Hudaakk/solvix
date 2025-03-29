@@ -609,14 +609,15 @@ class ProjectArchiveAPIView(APIView):
 
     def delete(self, request, pk, *args, **kwargs):
         try:
-            project = Project.objects.get(pk = pk)
+            project = Project.objects.get(pk=pk)
             project.status = ProjectStatus.ARCHIVED
-            project.save()
+            project.save(update_fields=['status'])
+            project.refresh_from_db()  # Ensure changes reflect in the response
 
             return Response({"message": "Project archived successfully!"}, status=status.HTTP_200_OK)
         except Project.DoesNotExist:
             return Response({"error": "Project not found!"}, status=status.HTTP_404_NOT_FOUND)
-        
+
 
 # restore archived project
 
