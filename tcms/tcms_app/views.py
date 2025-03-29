@@ -499,9 +499,9 @@ class UserListByRoleView(APIView):
             role_id = int(role_id)
             users = User.objects.filter(role__id=role_id)
 
-            # Exclude users who are currently assigned to active projects
-            active_projects = Project.objects.filter(status__in=["in_progress", "Pending"])
-            users = users.exclude(id__in = ProjectTeam.objects.filter(project__in = active_projects).values_list("user_id", flat=True))
+            # # Exclude users who are currently assigned to active projects
+            # active_projects = Project.objects.filter(status__in=["in_progress", "Pending"])
+            # users = users.exclude(id__in = ProjectTeam.objects.filter(project__in = active_projects).values_list("user_id", flat=True))
 
             # If specialization filter is provided and role is Developer, filter further
             role_name = Role.objects.get(id=role_id).role_name.lower()
@@ -678,6 +678,7 @@ class ProjectModuleView(ListCreateAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 # create and list task
 class ModuleTaskView(ListCreateAPIView):
 
@@ -711,10 +712,12 @@ class ModuleTaskView(ListCreateAPIView):
         # Add ProjectTeam ID instead of User ID
         request.data["assigned_to"] = project_team.id  # Assigning ProjectTeam ID
 
+        document = request.FILES.get("document", None)
+
         serializer = self.get_serializer(data=request.data, context={"module": module})
 
         if serializer.is_valid():
-            task = serializer.save(module=module, created_by=request.user)
+            task = serializer.save(module=module, created_by=request.user, document=document)
 
             # Handle comment creation
             comment_content = request.data.get("comment", "").strip()
@@ -731,6 +734,8 @@ class ModuleTaskView(ListCreateAPIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 # developers list for task
@@ -854,6 +859,7 @@ class TrakTaskListView(ListAPIView):
 
         return Response({"task_count": task_count, "tasks":serializer.data})
     
+
 
 # project list in QA
 class QAProjectListView(ListAPIView):
@@ -1890,7 +1896,7 @@ class AdminProjectDetailView(APIView):
 
         # Prepare the detailed response data.
         data = {
-            "project_id": project.id,
+            "project_id": project.project_id,
             "project_name": project.project_name,
             "project_description": project.project_description,
             "project_lead": project.project_lead.get_full_name() if project.project_lead and (project.project_lead.first_name or project.project_lead.last_name) else project.project_lead.username if project.project_lead else None,
@@ -2027,28 +2033,28 @@ class AdminuserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
-        target_user = get_object_or_404(User, id = user_id)
+        target_user = get_object_or_404(User, id=user_id)
         role = target_user.role.role_name.lower()
 
         user_details = {
-            "full_name":target_user.get_full_name() or target_user.username,
-            "email":target_user.email,
-            "role":role,
-            "specialization":target_user.specialization,
-            "status":target_user.status
+            "full_name": target_user.get_full_name() or target_user.username,
+            "email": target_user.email,
+            "role": role,
+            "specialization": target_user.specialization,
+            "status": target_user.status,
         }
 
-        #prepare monthly performance data for last 6 months.
+        # Prepare monthly performance data for the current year for the last 6 months.
         monthly_data = []
         now = timezone.now()
         current_year = now.year
-        # Define how many months you want to show.
-        number_of_months = 6  
-        # Determine starting month (if current month < number_of_months, start at January)
+        # Determine the starting month (if current month < number_of_months, start at January)
+        number_of_months = 6
         start_month = max(1, now.month - number_of_months + 1)
         for month in range(start_month, now.month + 1):
+            # Create a date label for the month
             label = datetime.date(current_year, month, 1).strftime("%B %Y")
-            
+
             if role == "developer":
                 qs = Task.objects.filter(
                     assigned_to__user=target_user,
@@ -2074,14 +2080,15 @@ class AdminuserDetailView(APIView):
                     created_at__month=month
                 )
                 total = qs.count()
+                # For QA, we consider a test finished if at least one assignment is completed.
                 finished = UserTestCase.objects.filter(
                     test_case__created_by=target_user,
-                    created_at__year=current_year,
-                    created_at__month=month,
+                    assigned_at__year=current_year,  # Changed from created_at to assigned_at
+                    assigned_at__month=month,
                     status=UserTestCaseStatus.COMPLETED
                 ).count()
                 completed = finished
-
+            
             elif role == "test engineer":
                 qs = UserTestCase.objects.filter(
                     assigned_to__user=target_user,
@@ -2107,6 +2114,7 @@ class AdminuserDetailView(APIView):
             "monthly_performance": monthly_data
         }
         return Response(data, status=status.HTTP_200_OK)
+
 
 # list bug by modules
 
@@ -2194,3 +2202,59 @@ class ProjectStatsView(APIView):
         }
         return Response(data, status=200)
 
+
+
+#assign bug to developer and fix task
+
+class AssignBugView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Ensure only project managers can assign bugs
+        if request.user.role.role_name.lower() != "project manager":
+            return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Get list of bug IDs from request data
+        bug_ids = request.data.get("bug_ids", [])  # Expecting a list of bug IDs
+        if not bug_ids or not isinstance(bug_ids, list):
+            return Response({"error": "A list of bug IDs is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get the developer ID from the request data
+        developer_id = request.data.get("assigned_to")
+        if not developer_id:
+            return Response({"error": "Developer ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        developer = get_object_or_404(User, id=developer_id)
+        if developer.role.role_name.lower() != "developer":
+            return Response({"error": "Assigned user must be a developer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Optionally, get a task ID if the bug should be linked to a specific task.
+        task_id = request.data.get("fix_task")
+        fix_task = None
+        if task_id:
+            fix_task = get_object_or_404(Task, id=task_id)
+
+        # Process each bug in the list
+        updated_bugs = []
+        errors = []
+        for bug_id in bug_ids:
+            try:
+                bug = get_object_or_404(Bug, bug_id=bug_id)
+                bug.assigned_to = developer
+                bug.fix_status = "pending"  # Ensure this field exists in your model
+                
+                if fix_task:
+                    bug.fix_task = fix_task  # Link to task if provided
+                
+                bug.save()
+                updated_bugs.append(bug_id)
+            except Exception as e:
+                errors.append({"bug_id": bug_id, "error": str(e)})
+
+        # Prepare response
+        response_data = {
+            "message": "Bugs assigned successfully.",
+            "updated_bugs": updated_bugs,
+            "errors": errors  # If any bugs failed to assign, include them in errors
+        }
+        return Response(response_data, status=status.HTTP_200_OK)

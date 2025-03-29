@@ -215,7 +215,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ["id", "task_id", "task_name", "task_description", "assigned_to", "created_by", "priority","status", "created_at","updated_at","due_date", "assigned_to_name", "project_name", "module_name", "progress", "due_status" , "comments"]
+        fields = ["id", "task_id", "task_name", "task_description", "assigned_to", "created_by", "priority","status", "created_at","updated_at","due_date", "assigned_to_name", "project_name", "module_name", "progress", "due_status" , "comments","document"]
 
 
     def get_assigned_to_name(self, obj):

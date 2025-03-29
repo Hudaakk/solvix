@@ -223,6 +223,7 @@ class Task(models.Model):
     task_name = models.CharField(max_length=255)
     task_description = models.TextField()
     assigned_to = models.ForeignKey(ProjectTeam, on_delete=models.CASCADE, related_name="assigned_tasks")
+    document = models.FileField(upload_to="task_documents/", null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="created_tasks")
     priority = models.CharField(max_length=10, choices=TaskPriority.choices, default=TaskPriority.MEDIUM)
     status = models.CharField(max_length=20, choices = TaskStatus.choices, default=TaskStatus.TO_DO)
@@ -459,8 +460,11 @@ class Bug(models.Model):
         ("trivial", "Trivial")
     ], default="minor")
 
+
     status = models.CharField(max_length=20, choices=[("open", "Open"), ("in_progress", "In Progress"), ("resolved", "Resolved"), ("closed", "Closed")], default="open")
     created_at = models.DateTimeField(auto_now_add=True)
+    fix_task = models.ForeignKey("Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="bug_fixes")
+    fixed_at = models.DateTimeField(null = True, blank=True)
 
     def __str__(self):
         return f"{self.title} ({self.status})"

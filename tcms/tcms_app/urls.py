@@ -129,7 +129,7 @@ urlpatterns = [
 
     path('admin/user-stats/', UserStatusView.as_view(), name='admin-user-stats'),
 
-    path('admin/user-projects/', UsersWithProjectsListView.as_view(), name='user-projects-list'),
+    path('admin/user-projects/', UsersWithProjectsListView.as_view(), name='user-projects-list'),#user and its project
 
     path('tasks/<int:task_id>/comments/', TaskCommentCreateView.as_view(), name='create-task-comment'),
 
