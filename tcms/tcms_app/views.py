@@ -544,9 +544,10 @@ class CreateProjectView(CreateAPIView):
             )
     
 
+from rest_framework.generics import UpdateAPIView
 #Edit project
 
-class UpdateProjectView(RetrieveAPIView):
+class UpdateProjectView(UpdateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ProjectSerializer
     queryset = Project.objects.all()
@@ -554,9 +555,12 @@ class UpdateProjectView(RetrieveAPIView):
     def get_object(self):
 
         project_id = self.kwargs.get("project_id")
-        return get_object_or_404(Project, project_id = project_id)
+        print(f"Received project_id: {project_id}")  # Debugging log
+
+        return get_object_or_404(Project, id = project_id)
     
     def perform_update(self, serializer):
+        print("--------------------")
         user = self.request.user
         # Only allow project managers to update the project.
         if not user.role or user.role.role_name.lower() != "project manager":
@@ -1591,24 +1595,6 @@ class ModuleDeveloperView(ListAPIView):
         return ProjectTeam.objects.filter(project=module.project, user__role__role_name__iexact="developer")
 
 
-class AssignBugView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, pk):
-        bug = get_object_or_404(Bug, pk=pk)
-        developer_id = request.data.get("assigned_to")
-        if not developer_id:
-            return Response(
-                {"error": "Developer id (assigned_to) is required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        developer = get_object_or_404(User, id=developer_id)
-        bug.assigned_to = developer
-        bug.save()
-        serializer = BugSerializer(bug, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
 # qa dashboard test status
 class QATestCaseStatsView(APIView):
     permission_classes = [IsAuthenticated]
@@ -2211,51 +2197,73 @@ class AssignBugView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # Ensure only project managers can assign bugs
+
         if request.user.role.role_name.lower() != "project manager":
-            return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error":"Permission Denied!"}, status=status.HTTP_403_FORBIDDEN)
+        
 
-        # Get list of bug IDs from request data
-        bug_ids = request.data.get("bug_ids", [])  # Expecting a list of bug IDs
+        bug_ids = request.data.get("bugs_ids",[])
         if not bug_ids or not isinstance(bug_ids, list):
-            return Response({"error": "A list of bug IDs is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Get the developer ID from the request data
+            return Response({"error":"A list of bug IDs is required,"}, status=status.HTTP_400_BAD_REQUEST)
+        
         developer_id = request.data.get("assigned_to")
         if not developer_id:
-            return Response({"error": "Developer ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error":"Developer ID is required"}, status=status.HTTP_400_BAD_REQUEST)
         
+        #get the developer from the user model
         developer = get_object_or_404(User, id=developer_id)
         if developer.role.role_name.lower() != "developer":
-            return Response({"error": "Assigned user must be a developer."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Optionally, get a task ID if the bug should be linked to a specific task.
+            return Response({"error":"Assigned user must be a developer."}, status=status.HTTP_400_BAD_REQUEST)
+        
         task_id = request.data.get("fix_task")
         fix_task = None
         if task_id:
             fix_task = get_object_or_404(Task, id=task_id)
 
-        # Process each bug in the list
+        #process each bug in the list
         updated_bugs = []
         errors = []
         for bug_id in bug_ids:
             try:
-                bug = get_object_or_404(Bug, bug_id=bug_id)
-                bug.assigned_to = developer
-                bug.fix_status = "pending"  # Ensure this field exists in your model
+                #Retrieve the bug by its bug_id
+                bug = get_object_or_404(Bug, id=bug_id)
+                project = bug.test_case_result.test_case.module.project
+
+                #verify the developer is part of the project team 
+                project_team_record = ProjectTeam.objects.filter(
+                    project=project,
+                    user = developer,
+                    status = "active"
+                ).first()
+                if not project_team_record:
+                    errors.append({
+                        "bug_id":bug_id,
+                        "error":"Developer is not part of the project team for this bug"
+                    })
+                    continue
                 
+                #Assign the bug to the developer
+                bug.assigned_to = project_team_record
+                bug.fix_status = "pending"
+
                 if fix_task:
-                    bug.fix_task = fix_task  # Link to task if provided
-                
+                    bug.fix_task = fix_task
+
                 bug.save()
                 updated_bugs.append(bug_id)
+
+                Notification.objects.create(
+                    user = project_team_record.user,
+                    message = f"Bug '{bug.title}' (ID : {bug.bug_id}) has been assigned to you for fixing.",
+                    status = "unread"
+                )
+
             except Exception as e:
                 errors.append({"bug_id": bug_id, "error": str(e)})
 
-        # Prepare response
         response_data = {
-            "message": "Bugs assigned successfully.",
-            "updated_bugs": updated_bugs,
-            "errors": errors  # If any bugs failed to assign, include them in errors
+            "message":"Bugs assigned successfully.",
+            "updated_bugs":updated_bugs,
+            "errors":errors
         }
         return Response(response_data, status=status.HTTP_200_OK)
