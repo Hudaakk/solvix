@@ -595,13 +595,21 @@ class TestCaseResultBriefSerializer(serializers.ModelSerializer):
 
 class BugSerializer(serializers.ModelSerializer):
     reported_by = UserBriefSerializer(read_only=True)
-    assigned_to = UserBriefSerializer(read_only=True)
+    assigned_to = ProjectTeamSerializer(read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
     test_case_result = TestCaseResultBriefSerializer(read_only=True)
+    fix_task = serializers.SerializerMethodField()
+
 
     class Meta:
         model = Bug
-        fields = ["id", "bug_id", "title", "description","priority", "status", "created_at", "severity","steps_to_reproduce", "environment", "reported_by", "assigned_to", "attachments", "test_case_result"]
+        fields = ["id", "bug_id", "title", "description","priority", "status", "created_at", "severity","steps_to_reproduce", "environment", "reported_by", "assigned_to", "attachments", "test_case_result","fix_task","fix_status"]
+
+    
+    def get_fix_task(self, obj):
+        return obj.fix_task.task_name if obj.fix_task else None
+    
+
 
 
 
@@ -642,3 +650,47 @@ class UserWithProjectsSerializer(serializers.ModelSerializer):
         return [{"project_id": p.project_id, "project_name": p.project_name} for p in all_projects]
     
 
+
+# task bug serializer
+
+class TaskBugSerializer(serializers.ModelSerializer):
+    # Use the 'source' parameter to tell the serializer to use the related name from Bug
+    bugs = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = [
+            "task_id","id", "task_name", "task_description", "priority", "status",
+            "due_date", "document", "progress", "bugs"
+        ]
+
+    
+    def get_bugs(self, obj):
+        # Get the bugs related to this task using the related_name "bug_fixes".
+        # We include only bugs that still need fixing.
+        pending_bugs = obj.bug_fixes.filter(
+            fix_status__in=["pending", "in_progress"],
+            status__in=["open", "in_progress", "resolved"]
+        )
+        # Serialize the filtered bugs.
+        return BugSerializer(pending_bugs, many=True).data
+
+
+
+# class DeveloperTaskDetailSerializer(serializers.ModelSerializer):
+#     # Use the source 'bug_fixes' to pull in related bugs (via the foreign key in Bug).
+#     bugs = BugSerializer(many=True, read_only=True, source="bug_fixes")
+
+#     class Meta:
+#         model = Task
+#         fields = [
+#             "task_id",
+#             "task_name",
+#             "task_description",
+#             "priority",
+#             "status",
+#             "due_date",
+#             "document",
+#             "progress",
+#             "bugs",
+#         ]

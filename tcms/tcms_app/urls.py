@@ -154,6 +154,14 @@ urlpatterns = [
     path('remove-profile-picture/', remove_profile_picture, name='remove-profile-picture'),
 
     path('pm/bugs/assign/', AssignBugView.as_view(), name='assign-bug'),
+
+    # path('dev/bugs/assigned/', DeveloperAssignedBugsView.as_view(), name = 'developer-assigned-bugs'),
+
+    path('dev/tasks-with-bugs/', DeveloperTaskWithBugsView.as_view(), name= 'developer-tasks-with-bugs'),
+
+    path('dev/task-bugs/<int:task_id>/', DeveloperTaskDetailView.as_view(), name='dev-task-details'),
+
+    path('dev/bugs/update/<int:bug_id>/', UpdateBugStatusView.as_view(), name='dev-task-update'),
     
 
 
