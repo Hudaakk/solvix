@@ -2364,7 +2364,7 @@ class UpdateBugStatusView(APIView):
             if test_case.status == TestCaseStatus.FAILED:
                 test_case.status = TestCaseStatus.ASSIGNED
                 test_case.save()
-                
+
                  # 8. For granular retesting, update only the failed test step results to "not_run".
                 failed_steps = UserTestStepResult.objects.filter(
                     user_test_case__test_case=test_case,
@@ -2377,3 +2377,82 @@ class UpdateBugStatusView(APIView):
 
         serializer = BugSerializer(bug)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+class QAReportDashboard(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        user = request.user
+        user_test_cases = TestCase.objects.filter(created_by=user)
+
+        total = user_test_cases.count()
+        passed = user_test_cases.filter(status=TestCaseStatus.COMPLETED).count()
+        failed = user_test_cases.filter(status=TestCaseStatus.FAILED).count()
+        pass_rate = (passed / total * 100) if total > 0 else 0
+
+        # Retrieve the most recent 5 failed test cases with project and module details.
+        recent_failed_qs = user_test_cases.filter(status=TestCaseStatus.FAILED).order_by('-created_at')[:5]
+        recent_failed = []
+        for test in recent_failed_qs:
+            recent_failed.append({
+                'test_id': test.test_id,
+                'test_title': test.test_title,
+                'test_description': test.test_description,
+                'project_name': test.module.project.project_name,  # Fetching project name
+                'module_name': test.module.module_name,            # Fetching module name
+                'created_at': test.created_at,
+                'due_date': test.due_date,
+            })
+
+        return Response({
+            'total_test_cases': total,
+            'passed_test_cases': passed,
+            'failed_test_cases': failed,
+            'pass_rate': round(pass_rate, 2),
+            'recent_failed_test_cases': recent_failed
+        })
+    
+
+class QaFailedTestcaseWithBugs(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        user = request.user
+        # Filter failed test cases created by the authenticated QA user.
+        failed_test_cases = TestCase.objects.filter(created_by=user, status=TestCaseStatus.FAILED)
+
+        results = []
+        for test in failed_test_cases:
+            bugs_list = []
+            # A test case can have multiple test results; each may have associated bugs.
+            for test_result in test.test_results.all():
+                # Serialize all bugs related to the test result.
+                serialized_bugs = BugSerializer(test_result.bugs.all(), many=True).data
+                bugs_list.extend(serialized_bugs)
+
+            # Determine the last run (most recent TestCaseResult) for the test case.
+            last_run_obj = test.test_results.order_by('-execution_date').first()
+            last_run = None
+            if last_run_obj:
+                last_run = {
+                    'result': last_run_obj.result,
+                    'execution_date': last_run_obj.execution_date,
+                    'remarks': last_run_obj.remarks,
+                    'executed_by': last_run_obj.executed_by.username,
+                }
+
+            results.append({
+                'test_id': test.test_id,
+                'test_title': test.test_title,
+                'test_description': test.test_description,
+                'project_name': test.module.project.project_name,
+                'module_name': test.module.module_name,
+                'created_at': test.created_at,
+                'due_date': test.due_date,
+                'bugs': bugs_list,
+                'last_run': last_run,
+            })
+
+        return Response(results)

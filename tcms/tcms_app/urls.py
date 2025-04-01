@@ -162,6 +162,10 @@ urlpatterns = [
     path('dev/task-bugs/<int:task_id>/', DeveloperTaskDetailView.as_view(), name='dev-task-details'),
 
     path('dev/bugs/update/<int:bug_id>/', UpdateBugStatusView.as_view(), name='dev-task-update'),
+
+    path('qa-dashboard-report/',QAReportDashboard.as_view(), name='qa-dashboard-report' ),
+
+    path('qa/failed-testcases/', QaFailedTestcaseWithBugs.as_view(), name='qa-failed-testcase'),
     
 
 
