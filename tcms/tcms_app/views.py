@@ -2321,45 +2321,59 @@ class UpdateBugStatusView(APIView):
 
         if request.user.role.role_name.lower() != "developer":
             return Response({"error": "Only developers can update bug status"}, status=status.HTTP_403_FORBIDDEN)
-        
 
         bug = get_object_or_404(Bug, id=bug_id)
 
-        #verify the bug is assigned to the developer
+        # Verify the bug is assigned to the developer
         project = bug.test_case_result.test_case.module.project
         project_team_record = ProjectTeam.objects.filter(user=request.user, project=project, status="active").first()
         if not project_team_record or bug.assigned_to != project_team_record:
             return Response({"error": "Bug is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        
-        # 4. Get the new fix status from request data.
+
+        # Get the new fix status from request data
         new_fix_status = request.data.get("fix_status")
         if new_fix_status not in dict(bug.FIX_STATUS_CHOICES).keys():
             return Response({"error": "Invalid fix status."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # 5. Optionally get resolution notes.
+
+        # Optionally get resolution notes
         resolution_notes = request.data.get("resolution_notes", "")
 
-        # 6. Update the bug's fix status.
+        # Update the bug's fix status
         bug.fix_status = new_fix_status
-        if new_fix_status in ["fixed", "closed"]:
+
+        # Change bug status based on fix_status
+        if new_fix_status == "in_progress":
+            bug.status = "in_progress"
+
+        elif new_fix_status == "fixed":
             bug.fixed_at = timezone.now()
-            # Optionally, update the overall bug status as well.
-            bug.status = "resolved" if new_fix_status == "fixed" else "closed"
+            bug.status = "resolved"
+            bug.resolution_notes = resolution_notes
+
+        elif new_fix_status == "closed":
+            bug.fixed_at = timezone.now()
+            bug.status = "closed"
             bug.resolution_notes = resolution_notes
 
         bug.save()
 
-        # 7. Check if all bugs related to this test case are fixed/closed.
+        # Check if all bugs related to this test case are fixed/closed
         test_case = bug.test_case_result.test_case
         related_bugs = bug.test_case_result.bugs.all()
         if all(b.fix_status in ["fixed", "closed"] for b in related_bugs):
-            # For example, if the test case was marked as FAILED, reassign it to a test engineer for retesting.
-            # (Your business logic here might differ.)
             if test_case.status == TestCaseStatus.FAILED:
                 test_case.status = TestCaseStatus.ASSIGNED
                 test_case.save()
+                
+                 # 8. For granular retesting, update only the failed test step results to "not_run".
+                failed_steps = UserTestStepResult.objects.filter(
+                    user_test_case__test_case=test_case,
+                    status="fail"
+                )
+                for step_result in failed_steps:
+                    step_result.status = "not_run"
+                    step_result.save()
                 # Optionally, send a notification to the test engineer(s).
-            # You could also check whether all test cases are passed and update project status accordingly.
 
         serializer = BugSerializer(bug)
         return Response(serializer.data, status=status.HTTP_200_OK)
