@@ -695,21 +695,3 @@ class TaskBugSerializer(serializers.ModelSerializer):
         return BugSerializer(pending_bugs, many=True).data
 
 
-
-# class DeveloperTaskDetailSerializer(serializers.ModelSerializer):
-#     # Use the source 'bug_fixes' to pull in related bugs (via the foreign key in Bug).
-#     bugs = BugSerializer(many=True, read_only=True, source="bug_fixes")
-
-#     class Meta:
-#         model = Task
-#         fields = [
-#             "task_id",
-#             "task_name",
-#             "task_description",
-#             "priority",
-#             "status",
-#             "due_date",
-#             "document",
-#             "progress",
-#             "bugs",
-#         ]

@@ -171,10 +171,6 @@ urlpatterns = [
 
     path('qa/failed-testcases/', QaFailedTestcaseWithBugs.as_view(), name='qa-failed-testcase'),
 
-    path('modules/<int:module_id>/bugs/', ModuleBugsAPIView.as_view(), name='module-bugs'),
-    
-
-
     
 
 

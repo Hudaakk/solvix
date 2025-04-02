@@ -1211,7 +1211,6 @@ class TestCaseDetailView(RetrieveAPIView):
 from rest_framework.generics import RetrieveUpdateAPIView
 
 
-
 # edit test case
 class TestUpdateView(RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
@@ -1220,10 +1219,6 @@ class TestUpdateView(RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return TestCase.objects.all()
-    
-    # def get_object(self):
-    #     test_case_id = self.kwargs.get("id")
-    #     return get_object_or_404(TestCase, id = test_case_id)
     
     def update(self, request, *args, **kwargs):
         user = request.user
@@ -1282,7 +1277,6 @@ from .serializers import UserTestStepResultSerializer, BugSerializer
 from .models import Bug, Attachment, TestCaseResult
 
 
-
 # test case step status update
 
 class UpdateTestStepStatus(APIView):
@@ -1304,7 +1298,6 @@ class UpdateTestStepStatus(APIView):
 from django.utils import timezone
 from .models import TestCaseStatus
  
-
 
 #mark complete or report bug by test engineer
 
@@ -1608,9 +1601,6 @@ class ReportBugOnTestCaseView(APIView):
 
 
 
-
-
-
 # list developer in a module QA
 
 class ModuleDeveloperView(ListAPIView):
@@ -1724,7 +1714,6 @@ class UserStatusView(APIView):
             'inactive_count': inactive_users.count(),
         })
     
-
 
 #admin dashboard
 class UsersWithProjectsListView(ListAPIView):
@@ -2140,7 +2129,7 @@ class ModuleBugListView(ListAPIView):
     def get_queryset(self):
         module_id = self.kwargs.get('module_id')
         module = get_object_or_404(Module, id=module_id)
-        return Bug.objects.filter(test_case_result__test_case__module = module)
+        return Bug.objects.filter(test_case_result__test_case__module = module, assigned_to__isnull = True)
     
 
 
@@ -2300,8 +2289,6 @@ class AssignBugView(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
-
-
 from .serializers import TaskBugSerializer
 
 #developer dashboard bug fix task
@@ -2320,7 +2307,6 @@ class DeveloperTaskWithBugsView(ListAPIView):
             bug_fixes__isnull=False
         ).distinct()
     
-
 
 
 # detailed task wilth bugs
@@ -2489,35 +2475,4 @@ class QaFailedTestcaseWithBugs(APIView):
 
         return Response(results)
 
-
-# list bugs by modules
-
-class ModuleBugsAPIView(ListAPIView):
-    serializer_class = BugSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        # Use the correct lookup field "Module_id" consistently
-        module_id = self.kwargs['module_id']
-        module = get_object_or_404(Module, id=module_id)
-        # Filter bugs that belong to this module and are unassigned
-        qs = Bug.objects.filter(test_case_result__test_case__module=module, assigned_to__isnull=True)
-        return qs
-
-    def list(self, request, *args, **kwargs):
-        # Check module existence using the same lookup field
-        module = get_object_or_404(Module, Module_id=self.kwargs['module_id'])
-        project = module.project
-
-        # Check if the user is part of the project team for this project
-        if not ProjectTeam.objects.filter(project=project, user=request.user, status='active').exists():
-            return Response(
-                {"detail": "You do not have permission to access this module's bugs."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-    
 
