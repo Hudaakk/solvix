@@ -30,6 +30,8 @@ urlpatterns = [
     path('roles/', RoleListView.as_view(), name = 'roles'),
 
     path('edit_user/<int:user_id>/', EditUserView.as_view(), name = 'edit_user'),
+
+    path('user/update-profile/', UserUpdateView.as_view(), name='user-update'),
     
     path('profile/<int:user_id>/', UserprofileView.as_view(), name='user-profile-view'), 
     
@@ -109,6 +111,8 @@ urlpatterns = [
 
     path('modules/<int:module_id>/failed-test-cases/', FailedTestCaseByModuleView.as_view(), name = 'failed-test-cases-by-module'),
 
+    path('modules/<int:module_id>/passed-test-cases/', PassedTestCaseByModuleView.as_view(), name='passed-test-cases-by-module'),
+
     path('test-cases/<int:test_case_id>/bugs/', BugsByTestCaseView.as_view(), name = 'bugs-by-test-case'),
 
     path('bugs/<int:pk>/', BugDetailView.as_view(), name='bug-detail'),
@@ -166,6 +170,8 @@ urlpatterns = [
     path('qa-dashboard-report/',QAReportDashboard.as_view(), name='qa-dashboard-report' ),
 
     path('qa/failed-testcases/', QaFailedTestcaseWithBugs.as_view(), name='qa-failed-testcase'),
+
+    path('modules/<int:module_id>/bugs/', ModuleBugsAPIView.as_view(), name='module-bugs'),
     
 
 

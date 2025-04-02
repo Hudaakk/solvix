@@ -50,7 +50,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id','user_id', 'name', 'first_name', 'last_name', 'email', 'role','profile_picture', 'status', 'specialization','username']
+        fields = ['id','user_id', 'name', 'first_name', 'last_name', 'email', 'role','profile_picture', 'status', 'specialization','username', 'last_login']
 
 
     def get_name(self, obj):
@@ -69,6 +69,25 @@ class EditSerializer(serializers.ModelSerializer):
             'password': {'write_only':True, 'required': False},
             'profile_picture': {'read_only': True},
         }
+
+
+# user profile update
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username', 'first_name', 'last_name', 'email']
+
+    def validate_email(self, value):
+        user = self.instance
+        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return value
+    
+    def validate_username(self, value):
+        user = self.instance
+        if User.objects.exclude(pk=user.pk).filter(username = value).exists():
+            raise serializers.ValidationError("This username is already taken")
+        return value
     
 
 # Change password

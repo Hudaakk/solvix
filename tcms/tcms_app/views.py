@@ -374,7 +374,7 @@ class RoleListView(APIView):
     
        
 
-#Edit user
+#Edit user profile by admin
 class EditUserView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -453,6 +453,23 @@ def remove_profile_picture(request):
     return Response({"error": "No profile picture to remove."}, status=status.HTTP_400_BAD_REQUEST)
 
 
+from .serializers import UserUpdateSerializer
+
+# edit profile
+
+class UserUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        user = request.user
+        serializer = UserUpdateSerializer(user, data=request.data, partial = True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message":"Profile updated successfully", "data": serializer.data}, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 
 from .serializers import  ProjectListSerializer, ModuleSerializer, ProjectSerializer, LeadProjectListSerializer, TaskSerializer, DeveloperSerializer, NotificationSerializer
@@ -1447,6 +1464,18 @@ class FailedTestCaseByModuleView(ListAPIView):
         return TestCase.objects.filter(module = module, status = TestCaseStatus.FAILED)
     
 
+# list the passed test case
+class PassedTestCaseByModuleView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TestCaseSerializer
+
+    def get_queryset(self):
+
+        module_id = self.kwargs.get("module_id")
+        module = get_object_or_404(Module, id=module_id)
+        return TestCase.objects.filter(module= module, status=TestCaseStatus.COMPLETED)
+    
+
 
 # qa list bugs in a test case
 
@@ -2198,6 +2227,8 @@ class AssignBugView(APIView):
 
     def post(self, request):
 
+        print("request data:", request.data )
+
         if request.user.role.role_name.lower() != "project manager":
             return Response({"error":"Permission Denied!"}, status=status.HTTP_403_FORBIDDEN)
         
@@ -2379,7 +2410,7 @@ class UpdateBugStatusView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-
+# qa dashboard report
 class QAReportDashboard(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -2414,6 +2445,7 @@ class QAReportDashboard(APIView):
             'recent_failed_test_cases': recent_failed
         })
     
+#qa dashboard failed test case
 
 class QaFailedTestcaseWithBugs(APIView):
     permission_classes = [IsAuthenticated]
@@ -2456,3 +2488,36 @@ class QaFailedTestcaseWithBugs(APIView):
             })
 
         return Response(results)
+
+
+# list bugs by modules
+
+class ModuleBugsAPIView(ListAPIView):
+    serializer_class = BugSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Use the correct lookup field "Module_id" consistently
+        module_id = self.kwargs['module_id']
+        module = get_object_or_404(Module, id=module_id)
+        # Filter bugs that belong to this module and are unassigned
+        qs = Bug.objects.filter(test_case_result__test_case__module=module, assigned_to__isnull=True)
+        return qs
+
+    def list(self, request, *args, **kwargs):
+        # Check module existence using the same lookup field
+        module = get_object_or_404(Module, Module_id=self.kwargs['module_id'])
+        project = module.project
+
+        # Check if the user is part of the project team for this project
+        if not ProjectTeam.objects.filter(project=project, user=request.user, status='active').exists():
+            return Response(
+                {"detail": "You do not have permission to access this module's bugs."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+
