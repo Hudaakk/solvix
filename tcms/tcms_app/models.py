@@ -46,9 +46,14 @@ class User(AbstractUser):
             
         super().save(*args, **kwargs)
 
-    def __str__(self):
-        return self.username
-    
+    def experience_in_months(self):
+        """Calculate experience in months from date_of_joining to today."""
+        if self.date_joined:
+            today = date.today()
+            total_months = (today.year - self.date_joined.year) * 12 + (today.month - self.date_joined.month)
+            return max(total_months, 0)  # Ensures no negative values
+        return 0
+        
 #Project Status
 
 class ProjectStatus(models.TextChoices):

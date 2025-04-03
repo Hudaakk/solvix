@@ -173,6 +173,8 @@ urlpatterns = [
 
     path('modules/<int:module_id>/unassigned-bugs/',UnassignedBugsInModuleAPI.as_view(),name='unassigned-bugs-in-module'),
 
+    path('admin/dashboard/user_list_by_exp/', users_by_experience, name='user-list-by-exp'),
+
     
 
 

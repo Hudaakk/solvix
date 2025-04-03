@@ -45,16 +45,20 @@ class CreateUserSerializer(serializers.ModelSerializer):
 
 # user list
 class UserSerializer(serializers.ModelSerializer):
+    experience_month = serializers.SerializerMethodField()
     role = serializers.StringRelatedField()
     name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id','user_id', 'name', 'first_name', 'last_name', 'email', 'role','profile_picture', 'status', 'specialization','username', 'last_login']
+        fields = ['id','user_id', 'name', 'first_name', 'last_name', 'email', 'role','profile_picture', 'status', 'specialization','username', 'last_login', 'experience_month']
 
 
     def get_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
+    
+    def get_experience_month(self, obj):
+        return obj.experience_in_months() or 0  # Ensure valid value
 
     
     

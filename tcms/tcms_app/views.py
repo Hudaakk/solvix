@@ -293,8 +293,7 @@ class UserListView(ListAPIView):
             return User.objects.none()  # Return empty queryset if not admin
 
         return User.objects.exclude(role__role_name__iexact="admin")
-
-
+    
 
 #Delete user
 class DeleteUserView(APIView):
@@ -577,7 +576,8 @@ class UpdateProjectView(UpdateAPIView):
         return get_object_or_404(Project, id = project_id)
     
     def perform_update(self, serializer):
-        print("--------------------")
+        print("Requested data:", self.request.data)
+
         user = self.request.user
         # Only allow project managers to update the project.
         if not user.role or user.role.role_name.lower() != "project manager":
@@ -2516,3 +2516,11 @@ class UnassignedBugsInModuleAPI(APIView):
         serializer = BugSerializer(unassigned_bugs, many=True)
         return Response(serializer.data)
 
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def users_by_experience(request):
+    """API to list users with the highest experience, excluding admins"""
+    users = User.objects.filter(date_joined__isnull=False).exclude(is_superuser=True).order_by("date_joined")
+    serializer = UserSerializer(users, many=True)
+    return Response(serializer.data)
