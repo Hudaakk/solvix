@@ -2495,15 +2495,13 @@ class UnassignedBugsInModuleAPI(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Check if user is part of the project team
+        # Get the project from the module
         project = module.project
-        if not ProjectTeam.objects.filter(
-            project=project, 
-            user=request.user, 
-            status='active'
-        ).exists():
+
+        # Check if the user is the Project Lead
+        if project.project_lead != request.user:
             return Response(
-                {"error": "You are not part of this project."},
+                {"error": "Only the Project Lead can view unassigned bugs."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
