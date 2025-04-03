@@ -2129,7 +2129,7 @@ class ModuleBugListView(ListAPIView):
     def get_queryset(self):
         module_id = self.kwargs.get('module_id')
         module = get_object_or_404(Module, id=module_id)
-        return Bug.objects.filter(test_case_result__test_case__module = module, assigned_to__isnull = True)
+        return Bug.objects.filter(test_case_result__test_case__module = module)
     
 
 
@@ -2377,7 +2377,7 @@ class UpdateBugStatusView(APIView):
         # Check if all bugs related to this test case are fixed/closed
         test_case = bug.test_case_result.test_case
         related_bugs = bug.test_case_result.bugs.all()
-        if all(b.fix_status in ["fixed", "closed"] for b in related_bugs):
+        if any(b.fix_status == "fixed" for b in related_bugs):  # If at least one bug is fixed
             if test_case.status == TestCaseStatus.FAILED:
                 test_case.status = TestCaseStatus.ASSIGNED
                 test_case.save()
@@ -2475,4 +2475,38 @@ class QaFailedTestcaseWithBugs(APIView):
 
         return Response(results)
 
+
+# un assigned bugs
+class UnassignedBugsInModuleAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, module_id):
+        try:
+            module = Module.objects.get(id=module_id)
+        except Module.DoesNotExist:
+            return Response(
+                {"error": "Module not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if user is part of the project team
+        project = module.project
+        if not ProjectTeam.objects.filter(
+            project=project, 
+            user=request.user, 
+            status='active'
+        ).exists():
+            return Response(
+                {"error": "You are not part of this project."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get unassigned bugs in this module
+        unassigned_bugs = Bug.objects.filter(
+            assigned_to__isnull=True,
+            test_case_result__test_case__module=module
+        )
+
+        serializer = BugSerializer(unassigned_bugs, many=True)
+        return Response(serializer.data)
 

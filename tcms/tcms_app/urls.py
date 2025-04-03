@@ -171,6 +171,8 @@ urlpatterns = [
 
     path('qa/failed-testcases/', QaFailedTestcaseWithBugs.as_view(), name='qa-failed-testcase'),
 
+    path('modules/<int:module_id>/unassigned-bugs/',UnassignedBugsInModuleAPI.as_view(),name='unassigned-bugs-in-module'),
+
     
 
 
