@@ -2331,11 +2331,9 @@ class DeveloperTaskDetailView(RetrieveAPIView):
 #update bug status
 
 class UpdateBugStatusView(APIView):
-
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, bug_id):
-
         if request.user.role.role_name.lower() != "developer":
             return Response({"error": "Only developers can update bug status"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -2374,26 +2372,34 @@ class UpdateBugStatusView(APIView):
 
         bug.save()
 
-        # Check if all bugs related to this test case are fixed/closed
+        # Check if any bug related to the test case is fixed
         test_case = bug.test_case_result.test_case
         related_bugs = bug.test_case_result.bugs.all()
-        if any(b.fix_status == "fixed" for b in related_bugs):  # If at least one bug is fixed
-            if test_case.status == TestCaseStatus.FAILED:
+        if any(b.fix_status == "fixed" for b in related_bugs):
+            # Update test case status to ASSIGNED if not already set
+            if test_case.status != TestCaseStatus.ASSIGNED:
                 test_case.status = TestCaseStatus.ASSIGNED
                 test_case.save()
 
-                 # 8. For granular retesting, update only the failed test step results to "not_run".
-                failed_steps = UserTestStepResult.objects.filter(
-                    user_test_case__test_case=test_case,
-                    status="fail"
-                )
-                for step_result in failed_steps:
-                    step_result.status = "not_run"
-                    step_result.save()
-                # Optionally, send a notification to the test engineer(s).
+            # Update all UserTestCase statuses for this test case to "todo"
+            user_test_cases = test_case.assigned_users.all()
+            for utc in user_test_cases:
+                utc.status = UserTestCaseStatus.TODO
+                utc.save()
+
+            # For granular retesting, update only the failed test step results to "not_run"
+            failed_steps = UserTestStepResult.objects.filter(
+                user_test_case__test_case=test_case,
+                status="fail"
+            )
+            for step_result in failed_steps:
+                step_result.status = "not_run"
+                step_result.save()
+            # Optionally, you can send a notification to the test engineer(s).
 
         serializer = BugSerializer(bug)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 
 # qa dashboard report

@@ -108,6 +108,7 @@ class Project(models.Model):
         module_qs = self.modules.all()
         total_modules = module_qs.count()
         if total_modules:
+            self.status = ProjectStatus.IN_PROGRESS
             completed_modules = module_qs.filter(status=ModuleStatus.COMPLETED).count()
             module_progress = (completed_modules / total_modules) * 100
         else:
