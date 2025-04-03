@@ -126,7 +126,7 @@ class ForgotPasswordAPIView(APIView):
         # Build the password reset URL
         # reset_url = f"{request.build_absolute_uri('/api/reset-password/')}?uid={uidb64}&token={token}"
 
-        frontend_url = "http://192.168.254.163:5173"
+        frontend_url = "http://192.168.251.86:5173"
         reset_url = f"{frontend_url}/reset-password/{uidb64}/{token}"
 
         # Prepare the email content
@@ -2522,3 +2522,67 @@ def users_by_experience(request):
     users = User.objects.filter(date_joined__isnull=False).exclude(is_superuser=True).order_by("date_joined")
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+from rest_framework.permissions import IsAuthenticated
+
+from .models import Project, User, ProjectTeam
+from .serializers import ProjectTeamSerializer  # Create one if needed
+
+class AddUsersToProjectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, project_id):
+        # Retrieve the project by id (or by any unique identifier)
+        project = get_object_or_404(Project, id=project_id)
+
+        # Check permission: only allow if the request.user is a project manager or is the project lead.
+        if (request.user.role.role_name.lower() != "project manager" and 
+            project.project_lead != request.user):
+            return Response(
+                {"error": "Permission Denied: Only a project manager or project lead can add users."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get the list of user IDs from the request payload.
+        user_ids = request.data.get("user_ids")
+        if not user_ids or not isinstance(user_ids, list):
+            return Response(
+                {"error": "A list of user IDs is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        added_users = []
+        errors = []
+
+        # Iterate over each user ID to add to the project.
+        for user_id in user_ids:
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                errors.append({"user_id": user_id, "error": "User does not exist."})
+                continue
+
+            # Check if user is already in the project team with an active status.
+            if ProjectTeam.objects.filter(project=project, user=user, status="active").exists():
+                errors.append({"user_id": user_id, "error": "User is already part of the project."})
+                continue
+
+            # Create the new project team assignment.
+            project_team_entry = ProjectTeam.objects.create(project=project, user=user, status="active")
+            added_users.append({
+                "user_id": user.id,
+                "username": user.username,
+                "project_team_id": project_team_entry.id
+            })
+
+        # Prepare the response data.
+        response_data = {
+            "added_users": added_users,
+            "errors": errors
+        }
+        return Response(response_data, status=status.HTTP_201_CREATED)

@@ -175,6 +175,8 @@ urlpatterns = [
 
     path('admin/dashboard/user_list_by_exp/', users_by_experience, name='user-list-by-exp'),
 
+    path('PM/<int:project_id>/adduser', AddUsersToProjectView.as_view(), name='add_user_to_existing_project'),
+
     
 
 
