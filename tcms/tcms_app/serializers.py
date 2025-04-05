@@ -356,31 +356,7 @@ class TestStepSerializer(serializers.ModelSerializer):
         model = TestStep
         fields = ["id", "step_number", "step_description", "expected_result", "status_details"]
 
-    # def get_status_details(self, obj):
-    #     request = self.context.get("request", None)
-
-    #     if request and request.user.is_authenticated:
-    #         user = request.user
-    #         user_test_case = UserTestCase.objects.filter(
-    #             test_case=obj.test_case, assigned_to__user=user
-    #         ).first()
-
-    #         if user_test_case:
-    #             user_test_step_result = UserTestStepResult.objects.filter(
-    #                 user_test_case=user_test_case, test_step=obj
-    #             ).first()
-
-    #             if user_test_step_result:
-    #                 return UserTestStepResultSerializer(user_test_step_result).data
-
-    #     # Default response if no result found
-    #     return {
-    #         "id": None,
-    #         "status": "not_run",
-    #         "execution_date": None,
-    #         "remarks": "No remarks"
-    #     }
-
+    
 # test_type
 
 class TestTypeSerializer(serializers.ModelSerializer):
@@ -616,12 +592,29 @@ class TestCaseResultBriefSerializer(serializers.ModelSerializer):
         fields = ["id", "result", "remarks", "execution_date"]
 
 
+
+class BugTaskSerializer(serializers.ModelSerializer):
+
+    comments = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = ['task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments']
+
+
+    def get_comments(self, obj):
+        comments = obj.task_comments.all().order_by("-created_at")
+        return TaskCommentSerializer(comments, many = True).data if comments else []
+    
+    
+
+
 class BugSerializer(serializers.ModelSerializer):
     reported_by = UserBriefSerializer(read_only=True)
     assigned_to = ProjectTeamSerializer(read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
     test_case_result = TestCaseResultBriefSerializer(read_only=True)
-    fix_task = serializers.SerializerMethodField()
+    fix_task = BugTaskSerializer(read_only = True)
 
 
     class Meta:
@@ -629,8 +622,8 @@ class BugSerializer(serializers.ModelSerializer):
         fields = ["id", "bug_id", "title", "description","priority", "status", "created_at", "severity","steps_to_reproduce", "environment", "reported_by", "assigned_to", "attachments", "test_case_result","fix_task","fix_status"]
 
     
-    def get_fix_task(self, obj):
-        return obj.fix_task.task_name if obj.fix_task else None
+    # def get_fix_task(self, obj):
+    #     return obj.fix_task.task_name if obj.fix_task else None
     
 
 
@@ -699,3 +692,6 @@ class TaskBugSerializer(serializers.ModelSerializer):
         return BugSerializer(pending_bugs, many=True).data
 
 
+
+
+    

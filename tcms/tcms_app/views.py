@@ -1398,6 +1398,14 @@ class CompleteTestCaseResultView(APIView):
                 created_at=timezone.now()
             )
 
+            project = user_test_case.test_case.module.project
+            pm = project.project_lead  # Assuming project_lead is the PM
+            if pm:
+                Notification.objects.create(
+                    user=pm,
+                    message=f"A new bug '{bug.title}' has been reported for test case '{user_test_case.test_case.test_title}' in project '{project.project_name}'."
+                )
+
             if attachment_file:
                 # Rewind file pointer before using it for the bug attachment.
                 attachment_file.seek(0)
@@ -1414,6 +1422,7 @@ class CompleteTestCaseResultView(APIView):
         # Update the TestCase status based on progress.
         test_case = user_test_case.test_case
         test_case.get_progress()  # This will update the status
+        
 
         # Prepare the response data.
         data = {
@@ -1565,6 +1574,16 @@ class ReportBugOnTestCaseView(APIView):
             environment=environment,
             created_at=timezone.now()
         )
+
+        # Notify the Project Manager about the new bug.
+        project = test_case.module.project  # Access the project from the test case's module.
+        pm = project.project_lead           # Assuming the project_lead is the PM.
+        if pm:
+            Notification.objects.create(
+                user=pm,
+                message=f"A new bug '{bug.title}' has been reported for test case '{test_case.test_title}' in project '{project.project_name}'."
+            )
+
 
         # Process an optional attachment file.
         attachment_file = request.FILES.get("attachment")
@@ -2208,85 +2227,77 @@ class ProjectStatsView(APIView):
         return Response(data, status=200)
 
 
-
+from .serializers import BugTaskSerializer
 #assign bug to developer and fix task
 
 class AssignBugView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def post(seelf, request, bug_id):
 
-        print("request data:", request.data )
-
-        if request.user.role.role_name.lower() != "project manager":
-            return Response({"error":"Permission Denied!"}, status=status.HTTP_403_FORBIDDEN)
+        user = request.user
+        if not user.role or user.role.role_name.lower() != "project manager":
+            return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
         
-
-        bug_ids = request.data.get("bugs_ids",[])
-        if not bug_ids or not isinstance(bug_ids, list):
-            return Response({"error":"A list of bug IDs is required,"}, status=status.HTTP_400_BAD_REQUEST)
+        # get bug and its module
+        bug = get_object_or_404(Bug, id= bug_id)
+        try:
+            bug_module = bug.test_case_result.test_case.module
+        except AttributeError:
+            return Response({"error": "Module could not be found for this bug."}, status=status.HTTP_400_BAD_REQUEST)
         
+        #Desirilize the task data from the request
+        serializer = BugTaskSerializer(data = request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        #Get developer id and ensure they are part of the project
         developer_id = request.data.get("assigned_to")
+        print("developer_id", developer_id)
+
         if not developer_id:
-            return Response({"error":"Developer ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error":"Developer id is required."}, status=status.HTTP_400_BAD_REQUEST)
         
-        #get the developer from the user model
-        developer = get_object_or_404(User, id=developer_id)
-        if developer.role.role_name.lower() != "developer":
-            return Response({"error":"Assigned user must be a developer."}, status=status.HTTP_400_BAD_REQUEST)
+        project = bug_module.project
+        print("project : ", project)
+        project_team_member = ProjectTeam.objects.filter(project = project, user_id = developer_id, status = "active").first()
+        print("project_team_member:", project_team_member)
+        if not project_team_member:
+            return Response({"error":"Developer not found in the project team"}, status=status.HTTP_400_BAD_REQUEST)
         
-        task_id = request.data.get("fix_task")
-        fix_task = None
-        if task_id:
-            fix_task = get_object_or_404(Task, id=task_id)
+        #save the task
+        task = serializer.save(
+            module = bug_module,
+            created_by = user,
+            assigned_to = project_team_member
+        )
 
-        #process each bug in the list
-        updated_bugs = []
-        errors = []
-        for bug_id in bug_ids:
-            try:
-                #Retrieve the bug by its bug_id
-                bug = get_object_or_404(Bug, id=bug_id)
-                project = bug.test_case_result.test_case.module.project
+        #Link task to bug and update status
+        bug.fix_task = task
+        bug.assigned_to = project_team_member
+        bug.status = "in_progress"
+        bug.save()
 
-                #verify the developer is part of the project team 
-                project_team_record = ProjectTeam.objects.filter(
-                    project=project,
-                    user = developer,
-                    status = "active"
-                ).first()
-                if not project_team_record:
-                    errors.append({
-                        "bug_id":bug_id,
-                        "error":"Developer is not part of the project team for this bug"
-                    })
-                    continue
-                
-                #Assign the bug to the developer
-                bug.assigned_to = project_team_record
-                bug.fix_status = "pending"
+        #save optional task comments
+        comment_text = request.data.get("comment")
+        if comment_text:
+            TaskComment.objects.create(
+                user = user,
+                task = task,
+                content = comment_text
+            )
 
-                if fix_task:
-                    bug.fix_task = fix_task
+        #Notify the developer
+        Notification.objects.create(
+            user = project_team_member.user,
+            message = f"You have been assigned a fix task for bug '{bug.title}' in project '{project.project_name}'."
+        )
 
-                bug.save()
-                updated_bugs.append(bug_id)
+        return Response({
+            "message":"Task assigned and linked to bug successfully.",
+            "task": serializer.data
+        }, status=status.HTTP_201_CREATED)
 
-                Notification.objects.create(
-                    user = project_team_record.user,
-                    message = f"Bug '{bug.title}' (ID : {bug.bug_id}) has been assigned to you for fixing.",
-                    status = "unread"
-                )
-
-            except Exception as e:
-                errors.append({"bug_id": bug_id, "error": str(e)})
-
-        response_data = {
-            "message":"Bugs assigned successfully.",
-            "updated_bugs":updated_bugs,
-            "errors":errors
-        }
-        return Response(response_data, status=status.HTTP_200_OK)
 
 
 from .serializers import TaskBugSerializer
@@ -2586,3 +2597,28 @@ class AddUsersToProjectView(APIView):
             "errors": errors
         }
         return Response(response_data, status=status.HTTP_201_CREATED)
+    
+#list the projects which have bugs, in project manager assign bug dashboard
+
+class ProjectWithBugsView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ProjectBasicSerializer
+
+    def get_queryset(self):
+        # Filter projects where there is at least one bug (through the chain of relationships)
+        return Project.objects.filter(
+            modules__test_cases__test_results__bugs__isnull=False
+        ).distinct() 
+
+
+# list the modules in a project with bugs, in project manager assign bug dashboard
+class ModuleWithBugsView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ModuleSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        project_id = self.kwargs.get('project_id')
+        return Module.objects.filter(
+            project__id = project_id,
+            test_cases__test_results__bugs__isnull = False
+        ).distinct()

@@ -157,7 +157,7 @@ urlpatterns = [
 
     path('remove-profile-picture/', remove_profile_picture, name='remove-profile-picture'),
 
-    path('pm/bugs/assign/', AssignBugView.as_view(), name='assign-bug'),
+    path('pm/bugs/assign-bug/<int:bug_id>/', AssignBugView.as_view(), name='assign-bug'),
 
     # path('dev/bugs/assigned/', DeveloperAssignedBugsView.as_view(), name = 'developer-assigned-bugs'),
 
@@ -176,6 +176,10 @@ urlpatterns = [
     path('admin/dashboard/user_list_by_exp/', users_by_experience, name='user-list-by-exp'),
 
     path('PM/<int:project_id>/adduser', AddUsersToProjectView.as_view(), name='add_user_to_existing_project'),
+
+    path('PM/project_with_bugs/', ProjectWithBugsView.as_view(), name='project-with-bugs'),
+
+    path('PM/<int:project_id>/modules_with_bugs/', ModuleWithBugsView.as_view(), name='module-with-bugs'),
 
     
 
