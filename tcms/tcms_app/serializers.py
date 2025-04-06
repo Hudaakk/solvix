@@ -604,7 +604,7 @@ class BugTaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ['task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments','created_by','project_name','module_name','bug_details']
+        fields = ['id','task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments','created_by','project_name','module_name','bug_details']
 
 
     def get_comments(self, obj):
