@@ -677,7 +677,7 @@ class ProjectModuleView(ListCreateAPIView):
     def get_queryset(self):
 
         project_id = self.kwargs["project_id"]
-        return Module.objects.filter(project_id = project_id).order_by("-priority")
+        return Module.objects.filter(project_id = project_id, is_deleted=False).order_by("-priority")
     
     def create(self, request, *args, **kwargs):
         user=self.request.user
@@ -699,7 +699,63 @@ class ProjectModuleView(ListCreateAPIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+from rest_framework.generics import RetrieveUpdateDestroyAPIView
 
+#update module
+
+class ProjectModuleDetailView(RetrieveUpdateDestroyAPIView):
+    queryset = Module.objects.all()
+    serializer_class = ModuleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        obj = super().get_object()
+        if obj.is_deleted:
+            raise NotFound("Module not found")
+        return obj
+        
+    
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        module = self.get_object()
+
+        if not user.role or user.role.role_name.lower() != "project manager":
+            raise PermissionDenied("Only Project Managers can update modules.")
+
+        project = module.project
+        serializer = self.get_serializer(module, data=request.data, partial=True, context={"project": project})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def destroy(self, request, *args, **kwargs):
+        user = request.user
+        module = self.get_object()
+
+        # Check PM permissions
+        if not user.role or user.role.role_name.lower() != "project manager":
+            raise PermissionDenied("Only Project Managers can delete modules.")
+
+        # Check for existing relationships
+        if module.tasks.exists() or module.test_cases.exists():
+            return Response(
+                {"error": "Module contains tasks or test cases - cannot delete"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Soft delete implementation
+        module.is_deleted = True
+        module.save()
+    
+        return Response(
+            {"message": "Module marked as deleted successfully"},
+            status=status.HTTP_204_NO_CONTENT
+        )
+       
+    
+
+    
 
 from .models import TaskType
 
@@ -760,6 +816,7 @@ class ModuleTaskView(ListCreateAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 #delete task
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
@@ -777,6 +834,63 @@ def soft_delete_task(request, pk):
     
     return Response({"message": "Task soft deleted successfully."}, status=status.HTTP_200_OK)
 
+
+from rest_framework.generics import RetrieveUpdateAPIView
+
+#task update view
+class TaskUpdateView(RetrieveUpdateAPIView):
+    queryset = Task.objects.filter(is_deleted=False)
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        task = super().get_object()
+        if task.is_deleted:
+            return Response({"error":"Task not found"}, status=status.HTTP_404_NOT_FOUND)
+        return task
+    
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        task = self.get_object()
+
+        # Only Project Manager can update
+        if not user.role or user.role.role_name.lower() != "project manager":
+            raise PermissionDenied("Only Project Managers can update tasks.")
+
+        # Handle reassignment: validate user is part of the team
+        assigned_to_user_id = request.data.get("assigned_to")
+        if assigned_to_user_id:
+            project_team = ProjectTeam.objects.filter(
+                user_id=assigned_to_user_id, 
+                project=task.module.project,
+                status="active"
+            ).first()
+            if not project_team:
+                return Response(
+                    {"error": "Assigned user is not part of the project team."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            request.data["assigned_to"] = project_team.id  # Replace with ProjectTeam ID
+
+        # Pass module to serializer context for due date validation
+        serializer = self.get_serializer(task, data=request.data, partial=True, context={"module": task.module})
+        
+        if serializer.is_valid():
+            task = serializer.save()
+
+            # Optional comment update
+            comment_text = request.data.get("comment", "").strip()
+            if comment_text:
+                existing_comment = task.task_comments.order_by("created_at").first()
+                if existing_comment:
+                    existing_comment.content = comment_text
+                    existing_comment.save()
+                else:
+                    TaskComment.objects.create(user=user, task=task, content=comment_text)
+
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # developers list for task

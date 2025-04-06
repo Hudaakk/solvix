@@ -56,11 +56,15 @@ urlpatterns = [
 
     path('projects/<int:project_id>/modules/', ProjectModuleView.as_view(), name='project_module'),
 
+    path('modules/<int:pk>/', ProjectModuleDetailView.as_view(), name='module-detail'),
+
     path('modules/<int:module_id>/tasks/', ModuleTaskView.as_view(), name = 'module-task'),
 
     path('pm/soft-delete-task/<int:pk>/', soft_delete_task, name='soft-delete-task'),
 
     path("projects/<int:project_id>/developers/", ProjectDevelopersView.as_view(), name = 'project-developers'),
+
+    path('task/<int:pk>/update/', TaskUpdateView.as_view(), name = 'task-update'),
 
     path('notifications/', NotificationListView.as_view(), name = "notification-list"),
 

@@ -165,7 +165,8 @@ class Module(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     due_date = models.DateField(null=True, blank=True)
     priority = models.CharField(max_length=10, choices=ModulePriority.choices, default=ModulePriority.MEDIUM)
-    status = models.CharField(max_length=15, choices=ModuleStatus.choices, default=ModuleStatus.PENDING)  # New Field
+    status = models.CharField(max_length=15, choices=ModuleStatus.choices, default=ModuleStatus.PENDING) 
+    is_deleted = models.BooleanField(default=False)
 
 
     def __str__(self):
