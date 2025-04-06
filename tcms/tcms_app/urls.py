@@ -58,6 +58,8 @@ urlpatterns = [
 
     path('modules/<int:module_id>/tasks/', ModuleTaskView.as_view(), name = 'module-task'),
 
+    path('pm/soft-delete-task/<int:pk>/', soft_delete_task, name='soft-delete-task'),
+
     path("projects/<int:project_id>/developers/", ProjectDevelopersView.as_view(), name = 'project-developers'),
 
     path('notifications/', NotificationListView.as_view(), name = "notification-list"),

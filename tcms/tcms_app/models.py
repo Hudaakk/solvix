@@ -237,6 +237,7 @@ class Task(models.Model):
     due_date = models.DateField(null = True, blank=True)
     progress = models.IntegerField(default=0)
     task_type = models.CharField(max_length=20, choices=TaskType.choices, default=TaskType.MODULE )
+    is_deleted = models.BooleanField(default=False)
 
     def update_progress(self):
 

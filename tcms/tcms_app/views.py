@@ -711,7 +711,7 @@ class ModuleTaskView(ListCreateAPIView):
 
     def get_queryset(self):
         module_id = self.kwargs["module_id"]
-        return Task.objects.filter(module_id=module_id).order_by("-priority")
+        return Task.objects.filter(module_id=module_id, is_deleted=False).order_by("-priority")
 
     def create(self, request, *args, **kwargs):
         user = self.request.user
@@ -760,6 +760,22 @@ class ModuleTaskView(ListCreateAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+#delete task
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def soft_delete_task(request, pk):
+    # Ensure only project managers can perform the delete
+    if request.user.role.role_name.lower() != "project manager":
+        return Response({"error": "Permission Denied"}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Retrieve the task by primary key
+    task = get_object_or_404(Task, pk=pk)
+    
+    # Mark the task as deleted
+    task.is_deleted = True
+    task.save(update_fields=["is_deleted"])
+    
+    return Response({"message": "Task soft deleted successfully."}, status=status.HTTP_200_OK)
 
 
 
@@ -829,6 +845,7 @@ def completed_developer_tasks(request):
     serializer = TaskSerializer(completed_tasks, many=True)
     return Response(serializer.data)
 
+
 #list the pending task 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -863,7 +880,7 @@ class DeveloperTaskListView(APIView):
     def get(self, request, pk=None):
         if pk:
             # Fetch a single task
-            task = get_object_or_404(Task, pk=pk, assigned_to__user=request.user)
+            task = get_object_or_404(Task, pk=pk, assigned_to__user=request.user, is_deleted = False)
             if task.task_type == TaskType.BUG_FIX:
                 serializer = BugTaskSerializer(task)
             else:
@@ -872,7 +889,7 @@ class DeveloperTaskListView(APIView):
         
         else:
             # Fetch all assigned tasks 
-            tasks = Task.objects.filter(assigned_to__user=request.user).order_by('-created_at')
+            tasks = Task.objects.filter(assigned_to__user=request.user, is_deleted = False ).order_by('-created_at')
             return Response(TaskSerializer(tasks, many=True).data)
 
 
@@ -1112,7 +1129,7 @@ class ModuleTestCaseView(ListCreateAPIView):
 
 def developer_task_statistics(request):
 
-    assigned_tasks = Task.objects.filter(assigned_to__user = request.user)
+    assigned_tasks = Task.objects.filter(assigned_to__user = request.user, is_deleted=False)
 
     
     total_tasks = assigned_tasks.count()
