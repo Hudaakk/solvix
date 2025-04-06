@@ -88,6 +88,10 @@ urlpatterns = [
 
     path('developer/upcoming-deadlines/', upcoming_deadlines, name = 'upcoming-deadlines'),
 
+    path('dev/completed-task-list/', completed_developer_tasks, name='dev-cmplt-task'),
+
+    path('dev/pending-task/', pending_developer_tasks, name='dev-pending-task'),
+
     path('assigned-tests/', AssignedTestCaseListView.as_view(), name='assigned-tests'),
 
     path('project/details/<int:pk>/', ProjectDetailView.as_view(), name='project-details'),

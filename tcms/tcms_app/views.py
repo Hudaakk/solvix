@@ -805,9 +805,54 @@ class MarkNotificationAsRead(APIView):
             return Response({"message": "Notification marked as read"}, status=status.HTTP_200_OK)
         except Notification.DoesNotExist:
             return Response({"error": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
-        
-    
 
+
+#list the completed list of task 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def completed_developer_tasks(request):
+    # Get the current logged-in developer
+    developer = request.user
+    
+    # Get all project teams where the user is a member
+    developer_teams = ProjectTeam.objects.filter(user=developer)
+    
+    # Get completed tasks assigned to these teams
+    completed_tasks = Task.objects.filter(
+        assigned_to__in=developer_teams,
+        status='completed'
+    ).select_related(
+        'module__project',
+        'assigned_to__user'
+    )
+    
+    serializer = TaskSerializer(completed_tasks, many=True)
+    return Response(serializer.data)
+
+#list the pending task 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pending_developer_tasks(request):
+    developer = request.user
+    
+    # Get developer's active project team assignments
+    developer_teams = ProjectTeam.objects.filter(
+        user=developer,
+        status='active'
+    )
+    
+    # Filter pending tasks (all non-completed statuses)
+    pending_tasks = Task.objects.filter(
+        assigned_to__in=developer_teams
+    ).exclude(
+        status=TaskStatus.COMPLETED
+    ).select_related(
+        'module__project',
+        'assigned_to__user'
+    ).order_by('due_date')
+    
+    serializer = TaskSerializer(pending_tasks, many=True)
+    return Response(serializer.data)
 
 # task list view in developer dashboard
 
@@ -1211,7 +1256,7 @@ class RecentTestEngineerActivities(ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        return UserTestCase.objects.filter(assigned_to__user=user).order_by("-assigned_at")[:10]
+        return UserTestCase.objects.filter(assigned_to__user=user).order_by("-updated_at")[:10]
     
 
 # TE upcoming events

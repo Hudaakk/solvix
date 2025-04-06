@@ -384,6 +384,7 @@ class UserTestCase(models.Model):
     assigned_to = models.ForeignKey(ProjectTeam, on_delete=models.CASCADE, related_name="user_test_cases")
     status = models.CharField(max_length=20, choices=UserTestCaseStatus.choices, default=UserTestCaseStatus.TODO) 
     assigned_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)  
 
     def __str__(self):
         return f"{self.test_case.test_title} -> {self.assigned_to.user.username}"
