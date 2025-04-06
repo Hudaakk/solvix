@@ -467,15 +467,14 @@ class Bug(models.Model):
     ], default="minor")
 
 
-    status = models.CharField(max_length=20, choices=[("open", "Open"), ("in_progress", "In Progress"), ("resolved", "Resolved"), ("closed", "Closed")], default="open")
+    status = models.CharField(max_length=20, choices=[("open", "Open"), ("in_progress", "In Progress"), ("resolved", "Resolved")], default="open")
     created_at = models.DateTimeField(auto_now_add=True)
     fix_task = models.ForeignKey("Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="bug_fixes")
     fixed_at = models.DateTimeField(null = True, blank=True)
     FIX_STATUS_CHOICES = [
         ("pending", "Pending"),
         ("in_progress", "In Progress"),
-        ("fixed", "Fixed"),
-        ("closed", "Closed"),
+        ("fixed", "Fixed")
     ]
     fix_status = models.CharField(max_length=20, choices=FIX_STATUS_CHOICES, default="pending")
     resolution_notes = models.TextField(null=True, blank=True)

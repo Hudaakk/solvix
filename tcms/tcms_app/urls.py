@@ -159,8 +159,6 @@ urlpatterns = [
 
     path('pm/bugs/assign-bug/<int:bug_id>/', AssignBugView.as_view(), name='assign-bug'),
 
-    # path('dev/bugs/assigned/', DeveloperAssignedBugsView.as_view(), name = 'developer-assigned-bugs'),
-
     path('dev/tasks-with-bugs/', DeveloperTaskWithBugsView.as_view(), name= 'developer-tasks-with-bugs'),
 
     path('dev/task-bugs/<int:task_id>/', DeveloperTaskDetailView.as_view(), name='dev-task-details'),

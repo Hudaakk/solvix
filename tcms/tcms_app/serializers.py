@@ -598,10 +598,13 @@ class BugTaskSerializer(serializers.ModelSerializer):
     comments = serializers.SerializerMethodField()
     bug_details = serializers.SerializerMethodField()
     created_by = serializers.SerializerMethodField()
+    module_name = serializers.SerializerMethodField() 
+    project_name = serializers.SerializerMethodField() 
+
 
     class Meta:
         model = Task
-        fields = ['task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments','created_by','bug_details']
+        fields = ['task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments','created_by','project_name','module_name','bug_details']
 
 
     def get_comments(self, obj):
@@ -610,6 +613,15 @@ class BugTaskSerializer(serializers.ModelSerializer):
     
     def get_created_by(self, obj):
         return obj.created_by.get_full_name() if obj.created_by else None
+    
+    def get_module_name(self, obj):
+        return obj.module.module_name if obj.module else None
+    
+    def get_project_name(self, obj):
+        if obj.module and obj.module.project:
+            return obj.module.project.project_name
+        return None
+
     
 
     def get_bug_details(self, obj):

@@ -839,35 +839,87 @@ from rest_framework.decorators import api_view, permission_classes
 @permission_classes([IsAuthenticated])
 
 def update_task_status(request, pk):
-
+    
+    #Retrieve and validate the task
     task = get_object_or_404(Task, pk=pk, assigned_to__user=request.user)
     new_status = request.data.get("status")
 
-    valid_statuses = ["to_do", "in_progress", "completed"]
+    valid_statuses = [choice[0] for choice in TaskStatus.choices]
 
     if new_status not in valid_statuses:
         return Response({"error": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
 
     task.status = new_status
-    task.save()
+    task.save(update_fields=["status"])
 
     module = task.module
-    tasks = Task.objects.filter(module=module)
-    
-    if tasks.exists():
-        completed_tasks = tasks.filter(status=TaskStatus.COMPLETED).count()
-        if completed_tasks == tasks.count():
-            module.status = ModuleStatus.COMPLETED
+    if module:
+        tasks = module.tasks.all()
+        if tasks.exist():
+            completed_tasks = tasks.filter(status = TaskStatus.COMPLETED).count()
+            if completed_tasks == tasks.count():
+                module.status = ModuleStatus.COMPLETED
+            else:
+                module.status = ModuleStatus.IN_PROGRESS
         else:
-            module.status = ModuleStatus.IN_PROGRESS
-    else:
-        module.status = ModuleStatus.PENDING
+            module.status = ModuleStatus.PENDING
+        module.save(update_fields = ["status"])
 
-    module.save(update_fields=['status'])  # Save the module status update
+    #task is bug fix
+    if task.task_type == TaskType.BUG_FIX:
+        #retrieve the associated bug
+
+        bug = task.bug_fixes.first()
+        if bug:
+            resolution_notes = request.data.get("resolution_notes", "")
+
+            if new_status == "in_progress":
+                bug.fix_status = "in_progress"
+
+            elif new_status == "completed":
+                bug.fix_status = "fixed"
+                bug.status = "resolved"
+                bug.fixed_at = timezone.now()
+                bug.resolution_notes = resolution_notes
+            
+            bug.save(update_fields = ["fix_status", "status", "fixed_at", "resolution_notes"])
 
 
-    return Response({"message": f"Task status updated to {new_status}", "task": TaskSerializer(task).data}, status=status.HTTP_200_OK)
-
+            #Update related test case result and retest process
+            test_case_result = getattr(bug, "test_case_result", None)
+            if test_case_result:
+                test_case = test_case_result.test_case
+                # Mark test case result as requiring retest
+                test_case_result.status = "retest_required"
+                test_case_result.save(update_fields=["status"])
+                
+                # If at least one bug is fixed, update test case status to ASSIGNED
+                related_bugs = test_case_result.bugs.all()
+                if any(b.fix_status == "fixed" for b in related_bugs):
+                    if test_case.status != TestCaseStatus.ASSIGNED:
+                        test_case.status = TestCaseStatus.ASSIGNED
+                        test_case.save()
+                    
+                    # Reset all related UserTestCases to TODO so that retesting is triggered
+                    user_test_cases = test_case.assigned_users.all()
+                    for utc in user_test_cases:
+                        utc.status = UserTestCaseStatus.TODO
+                        utc.save(update_fields=["status"])
+                    
+                    # Reset only the failed test step results to 'not_run'
+                    failed_steps = UserTestStepResult.objects.filter(
+                        user_test_case__test_case=test_case,
+                        status="fail"
+                    )
+                    for step_result in failed_steps:
+                        step_result.status = "not_run"
+                        step_result.save(update_fields=["status"])
+    
+    # Step 6: Return the updated task data
+    return Response({
+        "message": f"Task status updated to {new_status}",
+        "task": TaskSerializer(task, context={"module": module}).data
+    }, status=status.HTTP_200_OK)
 
 
 # track task list
