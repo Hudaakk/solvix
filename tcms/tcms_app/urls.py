@@ -1,5 +1,4 @@
 from django.urls import path
-# from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, LogoutAPIView, AddUserView, UserListView, DeleteUserView, ChangePasswordView, RoleListView, EditUserView, ProfileView, AddProfilePictureView, ProjectManagerListView, ProjectListView, UserListByRoleView, ProjectArchiveAPIView, ProjectRestoreAPIView, CreateProjectView, LeadProjectListView, ProjectModuleView, ModuleTaskView, ProjectDevelopersView,RoleCreateAPIView, UserprofileView, NotificationListView, DeveloperTaskListView, update_task_status, TrakTaskListView, ProjectCompletedModuleView, MarkNotificationAsRead, TestTypeLisCreateView, TestEngineerView, ModuleTestCaseView, developer_task_statistics, developer_recent_tasks, upcoming_deadlines, QAProjectListView, AssignedTestCaseListView, ProjectDetailView, TrackAssignedTestCaseListView, TestCaseSummaryView, RecentTestEngineerActivities, TestEngineerUpcomingDueView, TestCaseDetailView, TestUpdateView, UpdateTestStepStatus,CompleteTestCaseResultView, FailedTestCaseByModuleView, BugsByTestCaseView,BugDetailView, ModuleDeveloperView, QATestCaseStatsView, RecentTestCaseActivityView, UpcomingTestCaseDeadlinesView, AdminProjectStatsView, RecentProjectsView, UpdateProjectView, UserStatusView, UsersWithProjectsListView, TaskCommentCreateView, TestCommentCreateView, ReportBugOnTestCaseView, ProjectSummaryView, AdminProjectDetailView, AdminReportUserView, AdminuserDetailView, ModuleBugListView, ProjectManagerGraphView, ProjectStatsView, remove_profile_picture
 from .views import *
 from rest_framework_simplejwt.views import TokenRefreshView, TokenObtainPairView
 
@@ -169,7 +168,6 @@ urlpatterns = [
 
     path('qa/failed-testcases/', QaFailedTestcaseWithBugs.as_view(), name='qa-failed-testcase'),
 
-    path('modules/<int:module_id>/unassigned-bugs/',UnassignedBugsInModuleAPI.as_view(),name='unassigned-bugs-in-module'),
 
     path('admin/dashboard/user_list_by_exp/', users_by_experience, name='user-list-by-exp'),
 
