@@ -1114,7 +1114,9 @@ class QAProjectListView(ListAPIView):
         return Project.objects.filter(project_team__user=user, project_team__status="active").distinct()
 
 
-# module list in QA
+from django.db.models import Q, Exists, OuterRef
+
+# module list in QA, modules with test
 
 class ProjectCompletedModuleView(ListAPIView):
 
@@ -1122,9 +1124,16 @@ class ProjectCompletedModuleView(ListAPIView):
     serializer_class = ModuleSerializer
 
     def get_queryset(self):
-
         project_id = self.kwargs["project_id"]
-        return Module.objects.filter(project_id = project_id, status = ModuleStatus.COMPLETED).order_by("-priority")
+
+        # Subquery to check if a test case exists for the module
+        test_case_exists = TestCase.objects.filter(module=OuterRef('pk'))
+
+        return Module.objects.filter(
+            project_id=project_id
+        ).filter(
+            Q(status=ModuleStatus.COMPLETED) | Q(Exists(test_case_exists))
+        ).order_by("-priority")
     
 
 
@@ -1928,9 +1937,9 @@ class RecentProjectsView(ListAPIView):
     serializer_class = ProjectListSerializer
 
     def get_queryset(self):
-        # Order by created_at descending so that the first project is the most recently added.
-        return Project.objects.all().order_by('-created_at')
-    
+        # Exclude archived projects and order by most recent
+        return Project.objects.exclude(status=ProjectStatus.ARCHIVED).order_by('-created_at')
+
 
     
 # active and inactive users
@@ -2005,8 +2014,8 @@ class ProjectSummaryView(APIView):
 
         project = get_object_or_404(Project, id=project_id)
 
-        total_modules = project.modules.count()
-        total_tasks = Task.objects.filter(module__project = project).count()
+        total_modules = project.modules.filter(is_deleted=False).count()
+        total_tasks = Task.objects.filter(module__project = project, is_deleted = False).count()
         total_test_cases = TestCase.objects.filter(module__project = project).count()
         total_bugs = Bug.objects.filter(test_case_result__test_case__module__project = project).count()
         progress = project.progress
@@ -2060,7 +2069,7 @@ class AdminProjectDetailView(APIView):
 
         # get tasks associated with this project
 
-        tasks_qs = Task.objects.filter(module__project = project)
+        tasks_qs = Task.objects.filter(module__project = project, is_deleted = False)
         total_tasks = tasks_qs.count()
         completed_tasks = tasks_qs.filter(status = TaskStatus.COMPLETED).count()
         pending_tasks = total_tasks - completed_tasks
@@ -2070,10 +2079,10 @@ class AdminProjectDetailView(APIView):
         
         bugs_qs = Bug.objects.filter(test_case_result__test_case__module__project=project)
         total_bugs = bugs_qs.count()
-        critical_bugs = bugs_qs.filter(severity="critical").count()
-        major_bugs = bugs_qs.filter(severity = "major").count()
-        minor_bugs = bugs_qs.filter(severity="minor").count()
-        trivial_bugs = bugs_qs.filter(severity = "trivial").count()
+        critical_bugs = bugs_qs.filter(severity__iexact="critical").count()
+        major_bugs = bugs_qs.filter(severity__iexact = "major").count()
+        minor_bugs = bugs_qs.filter(severity__iexact="minor").count()
+        trivial_bugs = bugs_qs.filter(severity__iexact = "trivial").count()
 
 
         # overall progress
