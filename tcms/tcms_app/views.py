@@ -701,6 +701,8 @@ class ProjectModuleView(ListCreateAPIView):
 
 
 
+from .models import TaskType
+
 # create and list task
 class ModuleTaskView(ListCreateAPIView):
 
@@ -735,11 +737,12 @@ class ModuleTaskView(ListCreateAPIView):
         request.data["assigned_to"] = project_team.id  # Assigning ProjectTeam ID
 
         document = request.FILES.get("document", None)
+        task_type = TaskType.MODULE
 
         serializer = self.get_serializer(data=request.data, context={"module": module})
 
         if serializer.is_valid():
-            task = serializer.save(module=module, created_by=request.user, document=document)
+            task = serializer.save(module=module, created_by=request.user, document=document, task_type = task_type)
 
             # Handle comment creation
             comment_content = request.data.get("comment", "").strip()
@@ -816,10 +819,15 @@ class DeveloperTaskListView(APIView):
         if pk:
             # Fetch a single task
             task = get_object_or_404(Task, pk=pk, assigned_to__user=request.user)
-            return Response(TaskSerializer(task).data)
+            if task.task_type == TaskType.BUG_FIX:
+                serializer = BugTaskSerializer(task)
+            else:
+                serializer = TaskSerializer(task)
+            return Response(serializer.data)
+        
         else:
             # Fetch all assigned tasks 
-            tasks = Task.objects.filter(assigned_to__user=request.user)
+            tasks = Task.objects.filter(assigned_to__user=request.user).order_by('-created_at')
             return Response(TaskSerializer(tasks, many=True).data)
 
 
@@ -2233,7 +2241,7 @@ from .serializers import BugTaskSerializer
 class AssignBugView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(seelf, request, bug_id):
+    def post(self, request, bug_id):
 
         user = request.user
         if not user.role or user.role.role_name.lower() != "project manager":
@@ -2269,7 +2277,8 @@ class AssignBugView(APIView):
         task = serializer.save(
             module = bug_module,
             created_by = user,
-            assigned_to = project_team_member
+            assigned_to = project_team_member,
+            task_type = TaskType.BUG_FIX
         )
 
         #Link task to bug and update status

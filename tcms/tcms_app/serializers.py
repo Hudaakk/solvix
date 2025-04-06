@@ -238,7 +238,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ["id", "task_id", "task_name", "task_description", "assigned_to", "created_by", "priority","status", "created_at","updated_at","due_date", "assigned_to_name", "project_name", "module_name", "progress", "due_status" , "comments","document"]
+        fields = ["id", "task_id", "task_name", "task_description", "assigned_to", "created_by", "priority","status", "created_at","updated_at","due_date", "assigned_to_name", "project_name", "module_name", "progress", "due_status" , "comments","document", "task_type"]
 
 
     def get_assigned_to_name(self, obj):
@@ -596,16 +596,40 @@ class TestCaseResultBriefSerializer(serializers.ModelSerializer):
 class BugTaskSerializer(serializers.ModelSerializer):
 
     comments = serializers.SerializerMethodField()
+    bug_details = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
-        fields = ['task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments']
+        fields = ['task_id', 'task_name', 'task_description', 'priority', 'status', 'document', 'due_date', 'comments','created_by','bug_details']
 
 
     def get_comments(self, obj):
         comments = obj.task_comments.all().order_by("-created_at")
         return TaskCommentSerializer(comments, many = True).data if comments else []
     
+    def get_created_by(self, obj):
+        return obj.created_by.get_full_name() if obj.created_by else None
+    
+
+    def get_bug_details(self, obj):
+        try:
+            bug = obj.bug_fixes.get()
+            return {
+                "id":bug.id,
+                "bug_id": bug.bug_id,
+                "title": bug.title,
+                "description": bug.description,
+                "status": bug.status,
+                "severity": bug.severity,
+                "steps_to_reproduce": bug.steps_to_reproduce,
+                "environment": bug.environment,
+                "fix_status": bug.fix_status,
+                "reported_by": UserBriefSerializer(bug.reported_by).data,
+                "attachments": AttachmentSerializer(bug.attachments.all(), many=True).data
+            }
+        except Exception as e:
+            return None    
     
 
 

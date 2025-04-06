@@ -215,6 +215,11 @@ class TaskStatus(models.TextChoices):
     BLOCKED = "blocked", "Blocked"
     COMPLETED = "completed", "Completed"
 
+#Task Type
+class TaskType(models.TextChoices):
+    MODULE = "module", "Module"
+    BUG_FIX = "bug_fix", "Bug Fix"
+
 
 #Task 
 class Task(models.Model):
@@ -231,6 +236,7 @@ class Task(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     due_date = models.DateField(null = True, blank=True)
     progress = models.IntegerField(default=0)
+    task_type = models.CharField(max_length=20, choices=TaskType.choices, default=TaskType.MODULE )
 
     def update_progress(self):
 
