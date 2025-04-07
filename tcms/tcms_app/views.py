@@ -759,7 +759,6 @@ from .models import TaskType
 
 # create and list task
 class ModuleTaskView(ListCreateAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = TaskSerializer
 
@@ -778,33 +777,56 @@ class ModuleTaskView(ListCreateAPIView):
         module_id = kwargs["module_id"]
         module = get_object_or_404(Module, id=module_id)
 
-        # Extract user_id from request data
-        user_id = request.data.get("assigned_to")  # Expecting user_id
+        # Create mutable copy of request data
+        mutable_data = request.data.copy()
+
+        # Extract user_id from mutable data
+        user_id = mutable_data.get("assigned_to")  # Get from mutable copy
 
         # Validate if user_id exists in ProjectTeam for the same project
-        project_team = ProjectTeam.objects.filter(user_id=user_id, project=module.project, status="active").first()
+        project_team = ProjectTeam.objects.filter(
+            user_id=user_id, 
+            project=module.project, 
+            status="active"
+        ).first()
 
         if not project_team:
-            return Response({"error": "User is not part of the project team"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "User is not part of the project team"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Add ProjectTeam ID instead of User ID
-        request.data["assigned_to"] = project_team.id  # Assigning ProjectTeam ID
+        # Update mutable data with ProjectTeam ID
+        mutable_data["assigned_to"] = project_team.id  # Modify the copy
 
         document = request.FILES.get("document", None)
         task_type = TaskType.MODULE
 
-        serializer = self.get_serializer(data=request.data, context={"module": module})
+        # Use mutable data for serializer
+        serializer = self.get_serializer(
+            data=mutable_data, 
+            context={"module": module}
+        )
 
         if serializer.is_valid():
-            task = serializer.save(module=module, created_by=request.user, document=document, task_type = task_type)
+            task = serializer.save(
+                module=module, 
+                created_by=request.user, 
+                document=document, 
+                task_type=task_type
+            )
 
-            # Handle comment creation
-            comment_content = request.data.get("comment", "").strip()
+            # Handle comment creation (use mutable_data)
+            comment_content = mutable_data.get("comment", "").strip()
             if comment_content:
-                TaskComment.objects.create(user=request.user, task=task, content=comment_content)
+                TaskComment.objects.create(
+                    user=request.user, 
+                    task=task, 
+                    content=comment_content
+                )
 
             # Send notification to assigned user
-            assigned_user = project_team.user  # Get the user from ProjectTeam
+            assigned_user = project_team.user
             Notification.objects.create(
                 user=assigned_user,
                 message=f"You have been assigned a new task: {task.task_name}. Due Date: {task.due_date}"
@@ -813,7 +835,6 @@ class ModuleTaskView(ListCreateAPIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 #delete task
 @api_view(["DELETE"])
