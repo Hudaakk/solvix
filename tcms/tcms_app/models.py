@@ -293,6 +293,7 @@ class TestCaseStatus(models.TextChoices):
     ASSIGNED = "assigned", "Assigned"
     FAILED = "failed", "Failed"
     COMPLETED = "completed", "Completed"
+    REASSIGNED = "reassigned", "Reassigned"
 
     
 class TestCase(models.Model):

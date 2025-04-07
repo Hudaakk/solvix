@@ -126,7 +126,7 @@ class ForgotPasswordAPIView(APIView):
         # Build the password reset URL
         # reset_url = f"{request.build_absolute_uri('/api/reset-password/')}?uid={uidb64}&token={token}"
 
-        frontend_url = "https://react-vite-tcms-deploy-git-main-riswanathasnis-projects.vercel.app/#/"
+        frontend_url = "https://react-vite-tcms-deploy-git-main-riswanathasnis-projects.vercel.app/#"
         reset_url = f"{frontend_url}/reset-password/{uidb64}/{token}"
 
         # Prepare the email content
@@ -529,7 +529,8 @@ class UserListByRoleView(APIView):
 
         except (ValueError, Role.DoesNotExist):
             return Response({"error": "Invalid role ID"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
+from rest_framework.exceptions import ValidationError
 
 #create project 
 
@@ -544,6 +545,10 @@ class CreateProjectView(CreateAPIView):
 
         if not user.role or user.role.role_name.lower() != "project manager":
             raise PermissionDenied("Permission Denied")
+        
+        if not serializer.is_valid():
+            print("Serializer Errors:", serializer.errors)
+            raise ValidationError(serializer.errors)
         
         project = serializer.save()
 
@@ -598,22 +603,25 @@ class UpdateProjectView(UpdateAPIView):
 #projectListView
 
 class ProjectListView(ListAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = ProjectListSerializer
 
     def get_queryset(self):
         user = self.request.user
 
-        # Projects where the user is the Project Lead
+        # Projects where the user is either the project lead or the creator
+        project_lead_or_created_projects = Project.objects.filter(
+            Q(project_lead=user) | Q(created_by=user)
+        )
 
-        project_lead_projects = Project.objects.filter(project_lead=user)
+        # Projects where the user is in the project team
+        project_team_projects = Project.objects.filter(
+            project_team__user=user, 
+            project_team__status="active"
+        )
 
-        # Projects where the user is in the Project Team
-
-        project_team_projects = Project.objects.filter(project_team__user=user, project_team__status="active")
-        return (project_lead_projects | project_team_projects).distinct().order_by("-created_at")
-
+        # Combine both querysets, remove duplicates, and order by most recent creation date
+        return (project_lead_or_created_projects | project_team_projects).distinct().order_by("-created_at")
 
 # project detail view
 
@@ -1073,7 +1081,7 @@ def update_task_status(request, pk):
 
                 if any(b.fix_status == "fixed" for b in related_bugs):
                     if test_case.status != TestCaseStatus.ASSIGNED:
-                        test_case.status = TestCaseStatus.ASSIGNED
+                        test_case.status = TestCaseStatus.REASSIGNED
                         test_case.save(update_fields=["status"])
 
                     # Reset UserTestCases for retesting
@@ -1294,7 +1302,7 @@ def developer_task_statistics(request):
 def developer_recent_tasks(request):
 
     recent_tasks = (
-        Task.objects.filter(assigned_to__user = request.user).order_by("-updated_at")[:5]
+        Task.objects.filter(assigned_to__user = request.user, is_deleted=False).order_by("-updated_at")[:5]
     )
 
     task_data = [
@@ -2823,8 +2831,11 @@ class ProjectWithBugsView(ListAPIView):
     serializer_class = ProjectBasicSerializer
 
     def get_queryset(self):
+        user = self.request.user
         # Filter projects where there is at least one bug (through the chain of relationships)
         return Project.objects.filter(
+            project_lead=user,
+
             modules__test_cases__test_results__bugs__isnull=False
         ).distinct() 
 
