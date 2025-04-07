@@ -130,6 +130,9 @@ class Project(models.Model):
         test_progress = (test_qs.filter(status=TestCaseStatus.COMPLETED).count() / total_tests * 100) if total_tests else 0
 
         combined_progress = (module_progress + test_progress) / 2
+        if combined_progress == 100 :
+            self.status = ProjectStatus.COMPLETED
+            self.save()
         return round(combined_progress, 2)
 
     
@@ -316,13 +319,6 @@ class TestCase(models.Model):
 
     def __str__(self):
         return f"{self.test_title} ({self.module.module_name})"
-    
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        self.refresh_from_db()
-        self.get_progress()
-        self.module.save()
-        super().save(*args, **kwargs)
     
 
     def get_progress(self):
