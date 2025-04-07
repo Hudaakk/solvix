@@ -176,7 +176,7 @@ class Module(models.Model):
     
     @property
     def progress(self):
-        tasks = Task.objects.filter(module=self)
+        tasks = Task.objects.filter(module=self, is_deleted = False)
         if tasks.count() == 0:
             return 0
         completed_tasks = tasks.filter(status=TaskStatus.COMPLETED).count()

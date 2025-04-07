@@ -823,6 +823,8 @@ class ModuleTaskView(ListCreateAPIView):
                 document=document, 
                 task_type=task_type
             )
+            module.refresh_from_db()
+            module.save()
 
             # Handle comment creation (use mutable_data)
             comment_content = mutable_data.get("comment", "").strip()
@@ -1053,8 +1055,9 @@ def update_task_status(request, pk):
     task.save()  # Now updates both status and progress
 
     # Update module status via its save() method
-    if task.module:
-        task.module.save()  # Uses Module's save() logic
+    module = task.module
+    module.refresh_from_db()
+    module.save()
 
     # Handle bug-fix tasks
     if task.task_type == TaskType.BUG_FIX:
