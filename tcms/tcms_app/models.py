@@ -76,7 +76,6 @@ class Project(models.Model):
     status = models.CharField(max_length = 20, choices = ProjectStatus.choices, default = ProjectStatus.PENDING)
 
     def save(self, *args, **kwargs):
-        # Handle archived projects first
         if self.status == ProjectStatus.ARCHIVED:
             super().save(*args, **kwargs)
             return
@@ -88,34 +87,36 @@ class Project(models.Model):
         # Initial save to create relationships
         super().save(*args, **kwargs)
 
-        # New status determination logic
-        has_modules = self.modules.exists()
-        has_tests = TestCase.objects.filter(module__project=self).exists()
+        # Get FRESH data from database
+        self.refresh_from_db()
 
+        # Calculate module progress
+        total_modules = self.modules.count()
+        completed_modules = self.modules.filter(status=ModuleStatus.COMPLETED).count()
+        module_progress = 100 if total_modules > 0 and completed_modules == total_modules else 0
+
+        # Calculate test progress
+        test_cases = TestCase.objects.filter(module__project=self)
+        total_tests = test_cases.count()
+        completed_tests = test_cases.filter(status=TestCaseStatus.COMPLETED).count()
+        test_progress = 100 if total_tests > 0 and completed_tests == total_tests else 0
+
+        # Determine new status
         if self.status != ProjectStatus.ARCHIVED:
-            if has_modules or has_tests:
+            if total_modules + total_tests == 0:  # No modules/tests
+                new_status = ProjectStatus.PENDING
+            elif module_progress == 100 and test_progress == 100:
+                new_status = ProjectStatus.COMPLETED
+            elif module_progress > 0 or test_progress > 0:
                 new_status = ProjectStatus.IN_PROGRESS
-                
-                # Calculate actual progress
-                total_modules = self.modules.count()
-                completed_modules = self.modules.filter(status=ModuleStatus.COMPLETED).count()
-                module_progress = (completed_modules / total_modules * 100) if total_modules else 0
-
-                test_cases = TestCase.objects.filter(module__project=self)
-                total_tests = test_cases.count()
-                completed_tests = test_cases.filter(status=TestCaseStatus.COMPLETED).count()
-                test_progress = (completed_tests / total_tests * 100) if total_tests else 0
-
-                # Only mark completed if both are 100%
-                if module_progress == 100 and test_progress == 100:
-                    new_status = ProjectStatus.COMPLETED
             else:
                 new_status = ProjectStatus.PENDING
 
-            # Update status if changed
+            # Update if status changed
             if self.status != new_status:
                 self.status = new_status
                 super().save(update_fields=['status', 'updated_at'])
+
 
     @property
     def progress(self):
@@ -185,7 +186,8 @@ class Module(models.Model):
     def save(self, *args, **kwargs):
         # First, save the instance if it's new
         is_new = self._state.adding  # Check if this is a new object
-        super().save(*args, **kwargs)  
+        super().save(*args, **kwargs) 
+        self.project.save() 
 
         # Now query tasks only if the instance is saved (existing in DB)
         if not is_new:
@@ -315,6 +317,13 @@ class TestCase(models.Model):
     def __str__(self):
         return f"{self.test_title} ({self.module.module_name})"
     
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.refresh_from_db()
+        self.get_progress()
+        self.module.save()
+        super().save(*args, **kwargs)
+    
 
     def get_progress(self):
         assigned_users = self.assigned_users.all()  # UserTestCase instances
@@ -337,7 +346,10 @@ class TestCase(models.Model):
                 self.status = TestCaseStatus.FAILED
             self.save()
 
+            self.module.save()
+
         return progress
+
 
 
 
