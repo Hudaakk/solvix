@@ -126,7 +126,7 @@ class ForgotPasswordAPIView(APIView):
         # Build the password reset URL
         # reset_url = f"{request.build_absolute_uri('/api/reset-password/')}?uid={uidb64}&token={token}"
 
-        frontend_url = "http://192.168.251.86:5173"
+        frontend_url = "https://react-vite-tcms-deploy-git-main-riswanathasnis-projects.vercel.app/#/"
         reset_url = f"{frontend_url}/reset-password/{uidb64}/{token}"
 
         # Prepare the email content
@@ -692,10 +692,8 @@ class ProjectModuleView(ListCreateAPIView):
 
         if serializer.is_valid():
             module = serializer.save(project=project)
-            # If the project is still pending, update its status to in_progress
-            if project.status == ProjectStatus.PENDING:
-                project.status = ProjectStatus.IN_PROGRESS
-                project.save(update_fields=['status'])
+            project.save()
+            
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

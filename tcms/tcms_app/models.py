@@ -76,59 +76,61 @@ class Project(models.Model):
     status = models.CharField(max_length = 20, choices = ProjectStatus.choices, default = ProjectStatus.PENDING)
 
     def save(self, *args, **kwargs):
-    # If the project is already archived, do nothing except saving
+        # Handle archived projects first
         if self.status == ProjectStatus.ARCHIVED:
             super().save(*args, **kwargs)
-            return  
+            return
 
+        # Set project lead if missing
         if not self.project_lead:
             self.project_lead = self.created_by
 
-        # Save first so that related objects (modules, etc.) are available
+        # Initial save to create relationships
         super().save(*args, **kwargs)
 
-        # Update project status only if it is not archived
-        module_qs = self.modules.all()
-        total_modules = module_qs.count()
-        module_progress = (module_qs.filter(status=ModuleStatus.COMPLETED).count() / total_modules) * 100 if total_modules else 0
+        # New status determination logic
+        has_modules = self.modules.exists()
+        has_tests = TestCase.objects.filter(module__project=self).exists()
 
-        test_qs = TestCase.objects.filter(module__project=self)
-        total_tests = test_qs.count()
-        test_progress = (test_qs.filter(status=TestCaseStatus.COMPLETED).count() / total_tests) * 100 if total_tests else 0
-
-        combined_progress = (module_progress + test_progress) / 2
-
-        # Only change status if it's not archived
         if self.status != ProjectStatus.ARCHIVED:
-            if combined_progress == 100:
-                self.status = ProjectStatus.COMPLETED
-            else:
-                self.status = ProjectStatus.IN_PROGRESS if combined_progress > 0 else ProjectStatus.PENDING
+            if has_modules or has_tests:
+                new_status = ProjectStatus.IN_PROGRESS
+                
+                # Calculate actual progress
+                total_modules = self.modules.count()
+                completed_modules = self.modules.filter(status=ModuleStatus.COMPLETED).count()
+                module_progress = (completed_modules / total_modules * 100) if total_modules else 0
 
-        # Save again to update status.
-        super().save(update_fields=['status', 'updated_at'])
+                test_cases = TestCase.objects.filter(module__project=self)
+                total_tests = test_cases.count()
+                completed_tests = test_cases.filter(status=TestCaseStatus.COMPLETED).count()
+                test_progress = (completed_tests / total_tests * 100) if total_tests else 0
+
+                # Only mark completed if both are 100%
+                if module_progress == 100 and test_progress == 100:
+                    new_status = ProjectStatus.COMPLETED
+            else:
+                new_status = ProjectStatus.PENDING
+
+            # Update status if changed
+            if self.status != new_status:
+                self.status = new_status
+                super().save(update_fields=['status', 'updated_at'])
 
     @property
     def progress(self):
+        # Keep original progress calculation for reporting
         module_qs = self.modules.all()
         total_modules = module_qs.count()
-        if total_modules:
-            self.status = ProjectStatus.IN_PROGRESS
-            completed_modules = module_qs.filter(status=ModuleStatus.COMPLETED).count()
-            module_progress = (completed_modules / total_modules) * 100
-        else:
-            module_progress = 0
+        module_progress = (module_qs.filter(status=ModuleStatus.COMPLETED).count() / total_modules * 100) if total_modules else 0
 
         test_qs = TestCase.objects.filter(module__project=self)
         total_tests = test_qs.count()
-        if total_tests:
-            completed_tests = test_qs.filter(status=TestCaseStatus.COMPLETED).count()
-            test_progress = (completed_tests / total_tests) * 100
-        else:
-            test_progress = 0
+        test_progress = (test_qs.filter(status=TestCaseStatus.COMPLETED).count() / total_tests * 100) if total_tests else 0
 
         combined_progress = (module_progress + test_progress) / 2
         return round(combined_progress, 2)
+
     
     
 #Project Team

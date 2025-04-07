@@ -48,6 +48,7 @@ class UserSerializer(serializers.ModelSerializer):
     experience_month = serializers.SerializerMethodField()
     role = serializers.StringRelatedField()
     name = serializers.SerializerMethodField()
+    last_login = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -59,6 +60,13 @@ class UserSerializer(serializers.ModelSerializer):
     
     def get_experience_month(self, obj):
         return obj.experience_in_months() or 0  # Ensure valid value
+    
+    def get_last_login(self, obj):
+        if obj.last_login:
+            # Convert to local time and format it
+            local_time = localtime(obj.last_login)
+            return local_time.strftime("%B %d, %Y %I:%M %p")  # e.g., "April 06, 2025 11:51 AM"
+        return None
 
     
     
