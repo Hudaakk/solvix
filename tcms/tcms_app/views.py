@@ -663,6 +663,7 @@ class ProjectRestoreAPIView(APIView):
         except Project.DoesNotExist:
             return Response({"error": "Project not found or not archived!"}, status=status.HTTP_404_NOT_FOUND)
 
+
 #lead project list
 
 class LeadProjectListView(ListAPIView):
@@ -671,8 +672,9 @@ class LeadProjectListView(ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        return Project.objects.filter(project_lead = user)
-    
+        return Project.objects.filter(project_lead=user).exclude(
+            status__in=[ProjectStatus.COMPLETED, ProjectStatus.ARCHIVED]
+        )    
 
 
 #create and List module
