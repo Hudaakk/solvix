@@ -194,7 +194,7 @@ class ProjectListSerializer(serializers.ModelSerializer):
         fields = ["id","project_id", "project_name","project_description","project_lead","project_team", "progress","status","created_at","deadline","bugs_count", "created_date"]
     
     def get_bugs_count(self, obj):
-        return Bug.objects.filter(test_case_result__test_case__module__project=obj).count()
+        return Bug.objects.filter(test_case_result__test_case__module__project=obj).exclude(status='Resolved').count()
     
 
     def get_created_date(self, obj):

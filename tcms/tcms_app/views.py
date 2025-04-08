@@ -1348,19 +1348,20 @@ def upcoming_deadlines(request):
 # test engineer test list
 
 class AssignedTestCaseListView(ListAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = AssignedTestCaseSerializer
 
     def get_queryset(self):
-
         user = self.request.user
-        project_team = ProjectTeam.objects.filter(user = user, status = "active").first()
-
-        if not project_team:
+        # Retrieve all active project teams for the user
+        active_project_teams = ProjectTeam.objects.filter(user=user, status="active")
+        
+        if not active_project_teams.exists():
             return UserTestCase.objects.none()
         
-        return UserTestCase.objects.filter(assigned_to = project_team)
+        # Filter test cases assigned to any of the active teams
+        return UserTestCase.objects.filter(assigned_to__in=active_project_teams)
+
     
 
 # Track test case 
@@ -1371,12 +1372,18 @@ class TrackAssignedTestCaseListView(ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        project_team = ProjectTeam.objects.filter(user=user, status="active").first()
-
-        if not project_team:
+        # Retrieve all active project teams for the user
+        active_project_teams = ProjectTeam.objects.filter(user=user, status="active")
+        
+        # If the user is not in any active project team, return an empty queryset
+        if not active_project_teams.exists():
             return UserTestCase.objects.none()
+        
+        # Get test cases assigned to any of the user's active project teams, excluding those marked as COMPLETED
+        return UserTestCase.objects.filter(
+            assigned_to__in=active_project_teams
+        ).exclude(status=UserTestCaseStatus.COMPLETED)
 
-        return UserTestCase.objects.filter(assigned_to=project_team).exclude(status=UserTestCaseStatus.COMPLETED)
     
 
     def list(self, request, *args, **kwargs):
