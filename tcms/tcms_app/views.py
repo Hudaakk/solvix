@@ -1143,7 +1143,7 @@ class QAProjectListView(ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        return Project.objects.filter(project_team__user=user, project_team__status="active").distinct()
+        return Project.objects.filter(project_team__user=user, project_team__status="active").exclude(status="completed").distinct()
 
 
 from django.db.models import Q, Exists, OuterRef
@@ -2842,7 +2842,7 @@ class ProjectWithBugsView(ListAPIView):
             project_lead=user,
 
             modules__test_cases__test_results__bugs__isnull=False
-        ).distinct() 
+        ).exclude(status='completed').distinct() 
 
 
 # list the modules in a project with bugs, in project manager assign bug dashboard
