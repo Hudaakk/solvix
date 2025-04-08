@@ -107,10 +107,8 @@ class Project(models.Model):
                 new_status = ProjectStatus.PENDING
             elif module_progress == 100 and test_progress == 100:
                 new_status = ProjectStatus.COMPLETED
-            elif module_progress > 0 or test_progress > 0:
-                new_status = ProjectStatus.IN_PROGRESS
             else:
-                new_status = ProjectStatus.PENDING
+                new_status = ProjectStatus.IN_PROGRESS  # Modules/tests exist but not all completed
 
             # Update if status changed
             if self.status != new_status:
