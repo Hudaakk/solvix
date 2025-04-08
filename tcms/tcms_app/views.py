@@ -1401,29 +1401,58 @@ class TrackAssignedTestCaseListView(ListAPIView):
 # test case summary in tE dashboard
 
 
-class TestCaseSummaryView(APIView):
+# class TestCaseSummaryView(APIView):
 
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         user = request.user
+#         project_team = ProjectTeam.objects.filter(user = user, status = "active").first()
+
+#         if not project_team:
+#             return Response({"message": "No active project assigned"}, status=status.HTTP_400)
+        
+#         total_test_cases = UserTestCase.objects.filter(assigned_to = project_team).count()
+#         completed_test_cases = UserTestCase.objects.filter(
+#             assigned_to = project_team, status = UserTestCaseStatus.COMPLETED
+#         ).count()
+        
+#         pending_test_cases = total_test_cases - completed_test_cases
+
+#         return Response({
+#             "total_test_cases" : total_test_cases,
+#             "completed_test_cases": completed_test_cases,
+#             "pending_test_cases": pending_test_cases
+#         })
+
+class TestCaseSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        project_team = ProjectTeam.objects.filter(user = user, status = "active").first()
-
-        if not project_team:
+        
+        # Retrieve all active project teams for the user
+        active_project_teams = ProjectTeam.objects.filter(user=user, status="active")
+        
+        if not active_project_teams.exists():
             return Response({"message": "No active project assigned"}, status=status.HTTP_400)
         
-        total_test_cases = UserTestCase.objects.filter(assigned_to = project_team).count()
+        # Count all test cases assigned to any of the active project teams
+        total_test_cases = UserTestCase.objects.filter(assigned_to__in=active_project_teams).count()
+        
+        # Count completed test cases among those assigned to the active project teams
         completed_test_cases = UserTestCase.objects.filter(
-            assigned_to = project_team, status = UserTestCaseStatus.COMPLETED
+            assigned_to__in=active_project_teams, status=UserTestCaseStatus.COMPLETED
         ).count()
         
         pending_test_cases = total_test_cases - completed_test_cases
 
         return Response({
-            "total_test_cases" : total_test_cases,
+            "total_test_cases": total_test_cases,
             "completed_test_cases": completed_test_cases,
             "pending_test_cases": pending_test_cases
         })
+
     
 
 # TE recent activity
